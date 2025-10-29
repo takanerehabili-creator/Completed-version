@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="msapplication-tap-highlight" content="no">
+    
+    <title>予定表</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="offline-indicator" id="offlineIndicator">オフライン</div>
+    <div class="connection-status connecting" id="connectionStatus">接続中...</div>
+    <div class="sync-status syncing" id="syncStatus">同期中</div>
+    <div class="loading-indicator" id="loadingIndicator">データ読み込み中...</div>
+    <div class="read-counter" id="readCounter">📊 読み取り: 0回</div>
+    
+    <div class="app">
+        <header class="header">
+            <div class="nav">
+                <div class="week-controls-wrapper">
+                    <div class="week-controls">
+                        <button class="week-btn" id="prevWeekBtn" onclick="changeWeek(-1)">‹</button>
+                        <span class="week-display" id="weekDisplay" onclick="openCalendarModal()"></span>
+                        <button class="week-btn" id="nextWeekBtn" onclick="changeWeek(1)">›</button>
+                    </div>
+                    <span class="cache-status-below" id="cacheStatus">キャッシュ: 0週</span>
+                </div>
+                <button class="btn" onclick="goToToday()">今日</button>
+                <button class="btn" id="bulkMenuBtn" onclick="toggleBulkMenu()">一括</button>
+                <button class="btn" onclick="openSearchModal()">検索</button>
+                
+                <!-- 一括メニュー（初期状態は非表示） -->
+                <div id="bulkMenuButtons" style="display:none;">
+                    <button class="btn" id="bulkReservationBtn" onclick="toggleBulkReservationMode()">一括予約</button>
+                    <button class="btn primary" id="bulkProceedBtn" onclick="proceedToBulkReservation()" style="display:none">予約へ進む (<span id="bulkSelectionCount">0</span>件)</button>
+                    <button class="btn" id="bulkDeleteBtn" onclick="toggleBulkDeleteMode()">一括削除</button>
+                    <button class="btn danger" id="bulkDeleteExecuteBtn" onclick="executeBulkDelete()" style="display:none">削除する (<span id="bulkDeleteCount">0</span>件)</button>
+                </div>
+            </div>
+            <div class="nav">
+                <button class="btn" onclick="openManagement()">管理</button>
+            </div>
+            <div class="mobile-nav">
+                <div class="mobile-buttons">
+                    <div class="mobile-left">
+                        <button class="week-btn" id="prevWeekBtnMobile" onclick="changeWeek(-1)">‹</button>
+                        <span class="week-display" id="weekDisplayMobile" onclick="openCalendarModal()"></span>
+                        <button class="week-btn" onclick="changeWeek(1)">›</button>
+                    </div>
+                    <div class="mobile-right">
+                        <button class="btn" onclick="goToToday()">今日</button>
+                        <button class="btn" id="bulkMenuBtnMobile" onclick="toggleBulkMenu()">一括</button>
+                        <button class="btn" onclick="openSearchModal()">検索</button>
+                        <span class="cache-status" id="cacheStatusMobile">キャッシュ: 0週</span>
+                    </div>
+                </div>
+                <!-- モバイル用一括メニュー -->
+                <div id="bulkMenuButtonsMobile" style="display:none;margin-top:8px;">
+                    <button class="btn" id="bulkReservationBtnMobile" onclick="toggleBulkReservationMode()">一括予約</button>
+                    <button class="btn primary" id="bulkProceedBtnMobile" onclick="proceedToBulkReservation()" style="display:none">予約へ進む (<span id="bulkSelectionCountMobile">0</span>件)</button>
+                    <button class="btn" id="bulkDeleteBtnMobile" onclick="toggleBulkDeleteMode()">一括削除</button>
+                    <button class="btn danger" id="bulkDeleteExecuteBtnMobile" onclick="executeBulkDelete()" style="display:none">削除する (<span id="bulkDeleteCountMobile">0</span>件)</button>
+                </div>
+            </div>
+        </header>
+        <main class="main">
+            <div class="table-container" id="tableContainer">
+                <table class="table" id="mainTable">
+                    <tbody>
+                        <tr>
+                            <td class="loading-table" colspan="100%">スケジュールを読み込んでいます...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- 検索モーダル -->
+    <div id="searchModal" class="modal">
+        <div class="modal-content" style="max-width:600px">
+            <span class="close" onclick="closeSearchModal()">&times;</span>
+            <h2 class="modal-header">予定検索</h2>
+            
+            <div class="form-section">
+                <label class="form-label">名前で検索:</label>
+                <input type="text" id="searchNameInput" class="input" placeholder="姓または名を入力" 
+                       style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #ddd"
+                       onkeyup="if(event.key==='Enter') searchByName()">
+                <button class="action-btn primary" onclick="searchByName()" style="margin-top:10px;width:100%">🔍 検索</button>
+            </div>
+            
+            <div id="searchResults" style="display:none;margin-top:20px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                    <h3 style="margin:0;font-size:16px">検索結果: <span id="searchResultCount">0</span>件</h3>
+                    <button class="action-btn secondary" onclick="clearSearchResults()" style="padding:6px 12px;font-size:13px">クリア</button>
+                </div>
+                <div id="searchResultList" style="max-height:400px;overflow-y:auto;background:#f9f9f9;border-radius:8px;padding:10px"></div>
+            </div>
+            
+            <div class="modal-actions" style="margin-top:20px">
+                <button class="action-btn secondary" onclick="closeSearchModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- カレンダーモーダル -->
+    <div id="calendarModal" class="modal calendar-modal">
+        <div class="modal-content calendar-content">
+            <div class="calendar-header">
+                <button class="calendar-nav" onclick="changeCalendarMonth(-1)">‹</button>
+                <span id="calendarTitle"></span>
+                <button class="calendar-nav" onclick="changeCalendarMonth(1)">›</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeCalendarModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理モーダル -->
+    <div id="managementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeManagement()">&times;</span>
+            <h2 class="modal-header">管理画面</h2>
+            
+            <div class="form-section">
+                <label class="form-label">データ使用状況:</label>
+                <div style="background:#f5f5f5;border-radius:8px;padding:15px;margin-bottom:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <div>
+                            <div style="font-size:14px;color:#666;margin-bottom:5px">今日の読み取り</div>
+                            <div style="font-size:18px;font-weight:bold;margin-bottom:3px" id="managementReadCount">0回 (この端末)</div>
+                            <div style="font-size:22px;font-weight:bold;color:#2196f3" id="managementTotalCount">0回</div>
+                            <div style="font-size:12px;color:#666">全端末合計</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div style="font-size:12px;color:#666">無料枠: 50,000回/日</div>
+                            <div style="font-size:14px;font-weight:bold" id="managementRemaining">残り: 50,000回</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                        <button class="action-btn primary" onclick="refreshTotalCount()" style="flex:1">🔄 最新の合計を取得</button>
+                        <button class="action-btn primary" onclick="openFirebaseConsole()" style="flex:1">Firebase Consoleで確認</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">データ出力:</label>
+                <div style="display:flex;gap:10px;justify-content:center;margin-bottom:20px">
+                    <button class="action-btn primary" onclick="exportPDF()">PDF出力</button>
+                    <button class="action-btn primary" onclick="exportExcel()">Excel出力</button>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">スタッフ管理:</label>
+                <div id="staffList" class="list"></div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">新しいスタッフを追加:</label>
+                <div style="display:flex;gap:10px">
+                    <input type="text" id="newStaffSurname" class="form-input" placeholder="姓" style="flex:1" lang="ja" inputmode="text" autocomplete="off">
+                    <input type="text" id="newStaffFirstname" class="form-input" placeholder="名" style="flex:1" lang="ja" inputmode="text" autocomplete="off">
+                    <button class="action-btn primary" onclick="addStaff()">追加</button>
+                </div>
+            </div>
+            
+            <!-- ⭐ 有給・公休日管理セクション -->
+            <div class="form-section">
+                <label class="form-label">有給・公休日管理:</label>
+                <div id="staffLeaveList" class="list"></div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">有給・公休日の追加:</label>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">スタッフ:</label>
+                        <select id="leaveStaffSelect" class="form-select" style="flex:1">
+                            <option value="">スタッフを選択</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">日付:</label>
+                        <input type="date" id="leaveDate" class="form-input" style="flex:1">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">開始時間:</label>
+                        <select id="leaveStartTime" class="form-select" style="flex:1">
+                            <option value="">選択してください</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">終了時間:</label>
+                        <select id="leaveEndTime" class="form-select" style="flex:1">
+                            <option value="">選択してください</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end">
+                        <button class="action-btn primary" onclick="addStaffLeave()">追加</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ⭐ スタッフ入れ替え管理セクション -->
+            <div class="form-section">
+                <label class="form-label">スタッフ入れ替え管理:</label>
+                <div id="staffOverrideList" class="list"></div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">新しいスタッフ入れ替えを追加:</label>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">日付:</label>
+                        <input type="date" id="overrideDate" class="form-input" style="flex:1">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">休みにする:</label>
+                        <select id="overrideOriginalStaff" class="form-select" style="flex:1">
+                            <option value="">スタッフを選択</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">代わりに出勤:</label>
+                        <select id="overrideReplacementStaff" class="form-select" style="flex:1">
+                            <option value="">スタッフを選択</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end">
+                        <button class="action-btn primary" onclick="addStaffOverride()">追加</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- デイスケジュール管理セクション -->
+            <div class="form-section">
+                <label class="form-label">デイスケジュール管理:</label>
+                <div id="dayScheduleList" class="list"></div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">新しいデイ設定を追加:</label>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:80px;font-weight:600;font-size:14px">スタッフ:</label>
+                        <select id="dayScheduleStaffSelect" class="form-select" style="flex:1">
+                            <option value="">スタッフを選択</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:80px;font-weight:600;font-size:14px">曜日:</label>
+                        <div id="dayScheduleDaysSection" style="display:flex;gap:8px;flex-wrap:wrap">
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="1">
+                                <span class="checkmark"></span>
+                                <span class="day-label">月</span>
+                            </label>
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="2">
+                                <span class="checkmark"></span>
+                                <span class="day-label">火</span>
+                            </label>
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="3">
+                                <span class="checkmark"></span>
+                                <span class="day-label">水</span>
+                            </label>
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="4">
+                                <span class="checkmark"></span>
+                                <span class="day-label">木</span>
+                            </label>
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="5">
+                                <span class="checkmark"></span>
+                                <span class="day-label">金</span>
+                            </label>
+                            <label class="workday-checkbox">
+                                <input type="checkbox" value="6">
+                                <span class="checkmark"></span>
+                                <span class="day-label">土</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:80px;font-weight:600;font-size:14px">パターン:</label>
+                        <select id="daySchedulePattern" class="form-select" style="flex:1">
+                            <option value="custom">カスタム（時間指定）</option>
+                            <option value="pattern1">パターン① 9:20-14:40</option>
+                            <option value="pattern2">パターン② 13:00-14:40</option>
+                        </select>
+                    </div>
+                    <div id="customTimeSection" style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:80px;font-weight:600;font-size:14px">時間範囲:</label>
+                        <div style="flex:1;display:flex;gap:10px;align-items:center">
+                            <input type="time" id="dayScheduleStartTime" class="form-input" style="flex:1">
+                            <span>〜</span>
+                            <input type="time" id="dayScheduleEndTime" class="form-input" style="flex:1">
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end">
+                        <button class="action-btn primary" onclick="addDaySchedule()">追加</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ⭐ 削除できない予定の管理セクション -->
+            <div class="form-section">
+                <label class="form-label" style="color:#d32f2f">⚠️ 削除できない予定の管理:</label>
+                <p style="font-size:13px;color:#666;margin:10px 0">通常の方法で削除できない予定を検索して削除できます</p>
+                
+                <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px">
+                    <!-- 検索条件 -->
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                        <select id="troubleDeleteStaff" class="form-select" style="min-width:100px">
+                            <option value="">スタッフ</option>
+                            <option value="Ka">Ka</option>
+                            <option value="I">I</option>
+                            <option value="Kik">Kik</option>
+                            <option value="J">J</option>
+                            <option value="Sim">Sim</option>
+                            <option value="Yo">Yo</option>
+                            <option value="Sai">Sai</option>
+                            <option value="Ta">Ta</option>
+                        </select>
+                        <input type="date" id="troubleDeleteDate" class="form-input" style="min-width:150px">
+                        <input type="text" id="troubleDeleteName" class="form-input" placeholder="名前（任意）" style="min-width:120px">
+                        <button class="action-btn primary" onclick="searchTroubleEvents()" style="white-space:nowrap">検索</button>
+                    </div>
+                    
+                    <!-- 検索結果 -->
+                    <div id="troubleEventResults" style="display:none">
+                        <div style="background:#f5f5f5;border-radius:8px;padding:15px;max-height:300px;overflow-y:auto">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                                <strong id="troubleResultCount" style="font-size:14px">検索結果: 0件</strong>
+                                <button class="action-btn danger" onclick="deleteAllTroubleEvents()" id="deleteAllBtn" style="display:none">すべて削除</button>
+                            </div>
+                            <div id="troubleEventList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">祝日管理:</label>
+                <div id="holidayList" class="list"></div>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">祝日を一括取得:</label>
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+                    <select id="holidayYear" class="form-select" style="flex:1">
+                        <option value="">年を選択</option>
+                    </select>
+                    <button class="action-btn primary" onclick="fetchHolidaysFromInternet()">📥 インターネットから取得</button>
+                </div>
+                <p style="font-size:12px;color:#666;margin:0">※内閣府の祝日データから自動取得します</p>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">新しい祝日を手動追加:</label>
+                <div style="display:flex;gap:10px">
+                    <input type="date" id="newHolidayDate" class="form-input" style="flex:1">
+                    <button class="action-btn primary" onclick="addHoliday()">追加</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- イベント編集モーダル -->
+    <div id="eventModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeEvent()">&times;</span>
+            <h2 class="modal-header" id="modalHeader">予約追加</h2>
+            <div class="selected-time" id="selectedTimeDisplay"></div>
+            <div class="form-section" id="surnameSection">
+                <label class="form-label">姓:</label>
+                <input type="text" id="surnameInput" class="form-input" placeholder="姓を入力(必須)" required lang="ja" inputmode="text" autocomplete="off">
+            </div>
+            <div class="form-section" id="firstnameSection">
+                <label class="form-label">名:</label>
+                <input type="text" id="firstnameInput" class="form-input" placeholder="名を入力(任意)" lang="ja" inputmode="text" autocomplete="off">
+            </div>
+            <div class="form-section" id="timeRangeSection" style="display:none">
+                <label class="form-label">時間範囲:</label>
+                <div class="time-range-selects">
+                    <div>
+                        <label class="form-label" style="font-size:13px;margin-bottom:5px">開始時刻:</label>
+                        <select id="startTimeSelect" class="form-select"></select>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size:13px;margin-bottom:5px">終了時刻:</label>
+                        <select id="endTimeSelect" class="form-select"></select>
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <label class="form-label">予定種類:</label>
+                <div class="type-grid">
+                    <div class="type-option type-20min" data-type="20min">20分</div>
+                    <div class="type-option type-40min" data-type="40min">40分</div>
+                    <div class="type-option type-60min" data-type="60min">60分</div>
+                    <div class="type-option type-visit" data-type="visit">訪問</div>
+                    <div class="type-option type-workinjury20" data-type="workinjury20">労災20分</div>
+                    <div class="type-option type-workinjury40" data-type="workinjury40">労災40分</div>
+                    <div class="type-option type-accident" data-type="accident">事故</div>
+                    <div class="type-option type-day" data-type="day">デイ</div>
+                    <div class="type-option type-meeting" data-type="meeting">担会</div>
+                    <div class="type-option type-other" data-type="other">その他</div>
+                </div>
+            </div>
+            <div class="form-section" id="repeatSection">
+                <label class="form-label">繰り返し:</label>
+                <select id="repeatSelect" class="form-select">
+                    <option value="none">なし</option>
+                    <option value="weekly">毎週</option>
+                    <option value="biweekly1">隔週(1週間おき)</option>
+                    <option value="biweekly2">隔週(2週間おき)</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn danger" id="deleteButton" onclick="deleteEvent()" style="display:none">削除</button>
+                <button class="action-btn danger" id="deleteSingleButton" onclick="deleteSingle()" style="display:none">この予定のみ削除</button>
+                <button class="action-btn danger" id="deleteFromButton" onclick="deleteFrom()" style="display:none">この日以降を削除</button>
+                <button class="action-btn secondary" onclick="closeEvent()">キャンセル</button>
+                <button class="action-btn primary" onclick="saveEvent()">保存</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <script>
+        // Firebase初期化を一度だけ実行
+        if (!window.firebaseInitialized) {
+            window.firebaseInitialized = true;
+            
+            firebase.initializeApp({
+                apiKey: "AIzaSyCFj54m36M6Ai-3qPqCOUv-hzjtQf34YsU",
+                authDomain: "schedule-manager-87b03.firebaseapp.com",
+                projectId: "schedule-manager-87b03",
+                storageBucket: "schedule-manager-87b03.firebasestorage.app",
+                messagingSenderId: "280835955919",
+                appId: "1:280835955919:web:69a1ec7c9e5c20cdc2ebba"
+            });
+            
+            window.db = firebase.firestore();
+            
+            window.db.enablePersistence({
+                synchronizeTabs: false
+            }).catch((err) => {
+                if (err.code == 'failed-precondition') {
+                    console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+                } else if (err.code == 'unimplemented') {
+                    console.log('The current browser does not support persistence.');
+                }
+            });
+        }
+        
+        var db = window.db;
+        var isCapacitorApp = false;
+        var CapacitorApp, StatusBar, SplashScreen, Network, Keyboard, Haptics, Toast, Dialog;
+        var app;
+    </script>
+    
+    <script src="app-core.js"></script>
+    <script src="read-counter.js"></script>
+    <script src="app-events.js"></script>
+    <script src="conflict-check.js"></script>
+    <script src="app-ui.js"></script>
+    <script src="app-export.js"></script>
+    <script src="app-main.js"></script>
+    <script src="app-init.js"></script>
+    <script src="trouble-delete.js"></script>
+    <script src="bulk-reservation.js"></script>
+    <script src="bulk-delete.js"></script>
+    <script src="search.js"></script>
+    <script src="holiday-fetch.js"></script>
+    
+   <!-- スタッフセレクトボックス動的更新用スクリプト -->
+<script>
+    window.addEventListener('load', function() {
+        setTimeout(() => {
+            const originalOpenManagement = window.openManagement;
+            window.openManagement = function() {
+                if (originalOpenManagement) originalOpenManagement();
+                updateStaffSelects();
+            };
+            
+            function updateStaffSelects() {
+                setTimeout(() => {
+                    if (window.app && window.app.teamMembers) {
+                        // スタッフ入れ替え用
+                        const select1 = document.getElementById('overrideOriginalStaff');
+                        const select2 = document.getElementById('overrideReplacementStaff');
+                        
+                        // 有給・公休日用
+                        const leaveSelect = document.getElementById('leaveStaffSelect');
+                        
+                        if (select1 && select2) {
+                            const current1 = select1.value;
+                            const current2 = select2.value;
+                            
+                            select1.innerHTML = '<option value="">スタッフを選択</option>';
+                            select2.innerHTML = '<option value="">スタッフを選択</option>';
+                            
+                            window.app.teamMembers.forEach(m => {
+                                const name = `${m.surname || ''}${m.firstname || ''}`;
+                                
+                                const option1 = document.createElement('option');
+                                option1.value = name;
+                                option1.textContent = name;
+                                select1.appendChild(option1);
+                                
+                                const option2 = document.createElement('option');
+                                option2.value = name;
+                                option2.textContent = name;
+                                select2.appendChild(option2);
+                            });
+                            
+                            select1.value = current1;
+                            select2.value = current2;
+                        }
+                        
+                        if (leaveSelect) {
+                            const currentLeave = leaveSelect.value;
+                            
+                            leaveSelect.innerHTML = '<option value="">スタッフを選択</option>';
+                            
+                            window.app.teamMembers.forEach(m => {
+                                const name = `${m.surname || ''}${m.firstname || ''}`;
+                                const option = document.createElement('option');
+                                option.value = name;
+                                option.textContent = name;
+                                leaveSelect.appendChild(option);
+                            });
+                            
+                            leaveSelect.value = currentLeave;
+                        }
+                    }
+                }, 100);
+            }
+        }, 2000);
+    });
+    
+    // デイスケジュールのパターン選択処理
+    document.addEventListener('DOMContentLoaded', () => {
+        const patternSelect = document.getElementById('daySchedulePattern');
+        const customTimeSection = document.getElementById('customTimeSection');
+        
+        if (patternSelect) {
+            patternSelect.addEventListener('change', () => {
+                if (patternSelect.value === 'custom') {
+                    customTimeSection.style.display = 'flex';
+                } else {
+                    customTimeSection.style.display = 'none';
+                }
+            });
+        }
+    });
+</script>
+</body>
+</html>
