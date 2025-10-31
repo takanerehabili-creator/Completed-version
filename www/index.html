@@ -297,17 +297,59 @@
                     <div style="display:flex;gap:10px;align-items:center">
                         <label style="min-width:80px;font-weight:600;font-size:14px">パターン:</label>
                         <select id="daySchedulePattern" class="form-select" style="flex:1">
-                            <option value="custom">カスタム（時間指定）</option>
                             <option value="pattern1">パターン① 9:20-14:40</option>
                             <option value="pattern2">パターン② 13:00-14:40</option>
+                            <option value="custom">カスタム（時間指定）</option>
                         </select>
                     </div>
-                    <div id="customTimeSection" style="display:flex;gap:10px;align-items:center">
+                    <div id="customTimeSection" style="display:none;gap:10px;align-items:center">
                         <label style="min-width:80px;font-weight:600;font-size:14px">時間範囲:</label>
                         <div style="flex:1;display:flex;gap:10px;align-items:center">
-                            <input type="time" id="dayScheduleStartTime" class="form-input" style="flex:1">
+                            <select id="dayScheduleStartTime" class="form-select" style="flex:1">
+                                <option value="">開始時間</option>
+                                <option value="09:00">9:00</option>
+                                <option value="09:20">9:20</option>
+                                <option value="09:40">9:40</option>
+                                <option value="10:00">10:00</option>
+                                <option value="10:20">10:20</option>
+                                <option value="10:40">10:40</option>
+                                <option value="11:00">11:00</option>
+                                <option value="11:20">11:20</option>
+                                <option value="11:40">11:40</option>
+                                <option value="12:00">12:00</option>
+                                <option value="12:20">12:20</option>
+                                <option value="12:40">12:40</option>
+                                <option value="13:00">13:00</option>
+                                <option value="13:20">13:20</option>
+                                <option value="13:40">13:40</option>
+                                <option value="14:00">14:00</option>
+                                <option value="14:20">14:20</option>
+                                <option value="14:40">14:40</option>
+                                <option value="15:00">15:00</option>
+                            </select>
                             <span>〜</span>
-                            <input type="time" id="dayScheduleEndTime" class="form-input" style="flex:1">
+                            <select id="dayScheduleEndTime" class="form-select" style="flex:1">
+                                <option value="">終了時間</option>
+                                <option value="09:00">9:00</option>
+                                <option value="09:20">9:20</option>
+                                <option value="09:40">9:40</option>
+                                <option value="10:00">10:00</option>
+                                <option value="10:20">10:20</option>
+                                <option value="10:40">10:40</option>
+                                <option value="11:00">11:00</option>
+                                <option value="11:20">11:20</option>
+                                <option value="11:40">11:40</option>
+                                <option value="12:00">12:00</option>
+                                <option value="12:20">12:20</option>
+                                <option value="12:40">12:40</option>
+                                <option value="13:00">13:00</option>
+                                <option value="13:20">13:20</option>
+                                <option value="13:40">13:40</option>
+                                <option value="14:00">14:00</option>
+                                <option value="14:20">14:20</option>
+                                <option value="14:40">14:40</option>
+                                <option value="15:00">15:00</option>
+                            </select>
                         </div>
                     </div>
                     <div style="display:flex;justify-content:flex-end">
@@ -563,7 +605,10 @@
         const patternSelect = document.getElementById('daySchedulePattern');
         const customTimeSection = document.getElementById('customTimeSection');
         
-        if (patternSelect) {
+        if (patternSelect && customTimeSection) {
+            // 初期状態：パターン①が選択されているのでカスタム時間セクションは非表示
+            customTimeSection.style.display = 'none';
+            
             patternSelect.addEventListener('change', () => {
                 if (patternSelect.value === 'custom') {
                     customTimeSection.style.display = 'flex';

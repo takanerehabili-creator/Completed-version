@@ -48,10 +48,12 @@ class FirestoreReadCounter {
         return 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
     
-    // 今日の日付を取得（YYYY-MM-DD形式）
+    // 今日の日付を取得（太平洋時間でYYYY-MM-DD形式）
     getToday() {
+        // 太平洋時間で現在日時を取得
         const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const pacificTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+        return `${pacificTime.getFullYear()}-${String(pacificTime.getMonth() + 1).padStart(2, '0')}-${String(pacificTime.getDate()).padStart(2, '0')}`;
     }
     
     // 読み取り回数を取得
@@ -151,12 +153,14 @@ class FirestoreReadCounter {
             const lastUpdated = totalTimestamp > 0 ? new Date(totalTimestamp).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'}) : '未取得';
             counterElement.innerHTML = `📊 ${count.toLocaleString()}回 (端末) | 全体: ${totalCount.toLocaleString()}回 <span class="refresh-btn" onclick="refreshTotalCount()" title="全体の最新値を取得 (最終: ${lastUpdated})">🔄</span>`;
             
-            // 警告レベルに応じて色を変更
-            counterElement.classList.remove('warning', 'danger');
-            if (count >= this.dangerThreshold) {
-                counterElement.classList.add('danger');
-            } else if (count >= this.warningThreshold) {
-                counterElement.classList.add('warning');
+            // 全体読み込み数に応じて色を変更
+            counterElement.classList.remove('warning', 'danger', 'critical');
+            if (totalCount >= 50000) {
+                counterElement.classList.add('critical'); // 赤
+            } else if (totalCount >= 45000) {
+                counterElement.classList.add('danger'); // オレンジ
+            } else if (totalCount >= 40000) {
+                counterElement.classList.add('warning'); // 黄色
             }
         }
         

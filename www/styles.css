@@ -516,11 +516,18 @@ body {
 }
 
 .read-counter.warning {
-    background: #ff9800;
+    background: #ffeb3b;
+    color: #000;
 }
 
 .read-counter.danger {
+    background: #ff9800;
+    color: #fff;
+}
+
+.read-counter.critical {
     background: #f44336;
+    color: #fff;
 }
 
 .read-counter .refresh-btn {
