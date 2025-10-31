@@ -140,21 +140,19 @@ async function refreshAfterDelete() {
     console.log('=== 削除後のリフレッシュ開始 ===');
     
     // キャッシュクリア
-    app.weekCache.clear();
-    app.loadedWeeks.clear();
-    
-    // 現在の週のキーを取得
-    const weekKey = app.getWeekKey(app.currentWeekStart);
-    console.log('Current week key:', weekKey);
-    
-    // 週リスナーを再設定
-    console.log('週リスナーを再設定中...');
-    await app.setupWeekListener(weekKey);
+    if (app.weekCache) {
+        app.weekCache.clear();
+    }
+    if (app.loadedWeeks) {
+        app.loadedWeeks.clear();
+    }
     
     // テーブルを再描画
-    if (app.tableReadyForDisplay) {
+    if (app.tableReadyForDisplay && app.renderTable) {
         console.log('テーブルを再描画中...');
         app.renderTable();
+    } else {
+        console.log('テーブルの再描画をスキップ（準備未完了）');
     }
     
     console.log('=== リフレッシュ完了 ===');

@@ -162,8 +162,75 @@
                 </div>
             </div>
             
+            <!-- 各管理機能へのボタン -->
             <div class="form-section">
-                <label class="form-label">スタッフ管理:</label>
+                <label class="form-label">各種管理:</label>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                    <button class="action-btn primary" onclick="openStaffManagement()" style="width:100%;padding:15px;font-size:16px">
+                        👥 スタッフ管理を開く
+                    </button>
+                    <button class="action-btn primary" onclick="openLeaveManagement()" style="width:100%;padding:15px;font-size:16px">
+                        📅 有給・公休日管理を開く
+                    </button>
+                    <button class="action-btn primary" onclick="openOverrideManagement()" style="width:100%;padding:15px;font-size:16px">
+                        🔄 スタッフ入れ替え管理を開く
+                    </button>
+                    <button class="action-btn primary" onclick="openDayScheduleManagement()" style="width:100%;padding:15px;font-size:16px">
+                        📊 デイスケジュール管理を開く
+                    </button>
+                    <button class="action-btn primary" onclick="openHolidayManagement()" style="width:100%;padding:15px;font-size:16px">
+                        🎌 祝日管理を開く
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 削除できない予定の管理セクション -->
+            <div class="form-section">
+                <label class="form-label" style="color:#d32f2f">⚠️ 削除できない予定の管理:</label>
+                <p style="font-size:13px;color:#666;margin:10px 0">通常の方法で削除できない予定を検索して削除できます</p>
+                
+                <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px">
+                    <!-- 検索条件 -->
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                        <select id="troubleDeleteStaff" class="form-select" style="min-width:100px">
+                            <option value="">スタッフ</option>
+                            <option value="Ka">Ka</option>
+                            <option value="I">I</option>
+                            <option value="Kik">Kik</option>
+                            <option value="J">J</option>
+                            <option value="Sim">Sim</option>
+                            <option value="Yo">Yo</option>
+                            <option value="Sai">Sai</option>
+                            <option value="Ta">Ta</option>
+                        </select>
+                        <input type="date" id="troubleDeleteDate" class="form-input" style="min-width:150px">
+                        <input type="text" id="troubleDeleteName" class="form-input" placeholder="名前（任意）" style="min-width:120px">
+                        <button class="action-btn primary" onclick="searchTroubleEvents()" style="white-space:nowrap">検索</button>
+                    </div>
+                    
+                    <!-- 検索結果 -->
+                    <div id="troubleEventResults" style="display:none">
+                        <div style="background:#f5f5f5;border-radius:8px;padding:15px;max-height:300px;overflow-y:auto">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                                <strong id="troubleResultCount" style="font-size:14px">検索結果: 0件</strong>
+                                <button class="action-btn danger" onclick="deleteAllTroubleEvents()" id="deleteAllBtn" style="display:none">すべて削除</button>
+                            </div>
+                            <div id="troubleEventList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- スタッフ管理モーダル -->
+    <div id="staffManagementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeStaffManagement()">&times;</span>
+            <h2 class="modal-header">👥 スタッフ管理</h2>
+            
+            <div class="form-section">
+                <label class="form-label">スタッフ一覧:</label>
                 <div id="staffList" class="list"></div>
             </div>
             
@@ -176,9 +243,20 @@
                 </div>
             </div>
             
-            <!-- ⭐ 有給・公休日管理セクション -->
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeStaffManagement()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 有給・公休日管理モーダル -->
+    <div id="leaveManagementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeLeaveManagement()">&times;</span>
+            <h2 class="modal-header">📅 有給・公休日管理</h2>
+            
             <div class="form-section">
-                <label class="form-label">有給・公休日管理:</label>
+                <label class="form-label">有給・公休日一覧:</label>
                 <div id="staffLeaveList" class="list"></div>
             </div>
             
@@ -213,9 +291,20 @@
                 </div>
             </div>
             
-            <!-- ⭐ スタッフ入れ替え管理セクション -->
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeLeaveManagement()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- スタッフ入れ替え管理モーダル -->
+    <div id="overrideManagementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeOverrideManagement()">&times;</span>
+            <h2 class="modal-header">🔄 スタッフ入れ替え管理</h2>
+            
             <div class="form-section">
-                <label class="form-label">スタッフ入れ替え管理:</label>
+                <label class="form-label">スタッフ入れ替え一覧:</label>
                 <div id="staffOverrideList" class="list"></div>
             </div>
             
@@ -244,9 +333,20 @@
                 </div>
             </div>
             
-            <!-- デイスケジュール管理セクション -->
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeOverrideManagement()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- デイスケジュール管理モーダル -->
+    <div id="dayScheduleManagementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeDayScheduleManagement()">&times;</span>
+            <h2 class="modal-header">📊 デイスケジュール管理</h2>
+            
             <div class="form-section">
-                <label class="form-label">デイスケジュール管理:</label>
+                <label class="form-label">デイスケジュール一覧:</label>
                 <div id="dayScheduleList" class="list"></div>
             </div>
             
@@ -358,45 +458,20 @@
                 </div>
             </div>
             
-            <!-- ⭐ 削除できない予定の管理セクション -->
-            <div class="form-section">
-                <label class="form-label" style="color:#d32f2f">⚠️ 削除できない予定の管理:</label>
-                <p style="font-size:13px;color:#666;margin:10px 0">通常の方法で削除できない予定を検索して削除できます</p>
-                
-                <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px">
-                    <!-- 検索条件 -->
-                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                        <select id="troubleDeleteStaff" class="form-select" style="min-width:100px">
-                            <option value="">スタッフ</option>
-                            <option value="Ka">Ka</option>
-                            <option value="I">I</option>
-                            <option value="Kik">Kik</option>
-                            <option value="J">J</option>
-                            <option value="Sim">Sim</option>
-                            <option value="Yo">Yo</option>
-                            <option value="Sai">Sai</option>
-                            <option value="Ta">Ta</option>
-                        </select>
-                        <input type="date" id="troubleDeleteDate" class="form-input" style="min-width:150px">
-                        <input type="text" id="troubleDeleteName" class="form-input" placeholder="名前（任意）" style="min-width:120px">
-                        <button class="action-btn primary" onclick="searchTroubleEvents()" style="white-space:nowrap">検索</button>
-                    </div>
-                    
-                    <!-- 検索結果 -->
-                    <div id="troubleEventResults" style="display:none">
-                        <div style="background:#f5f5f5;border-radius:8px;padding:15px;max-height:300px;overflow-y:auto">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                                <strong id="troubleResultCount" style="font-size:14px">検索結果: 0件</strong>
-                                <button class="action-btn danger" onclick="deleteAllTroubleEvents()" id="deleteAllBtn" style="display:none">すべて削除</button>
-                            </div>
-                            <div id="troubleEventList"></div>
-                        </div>
-                    </div>
-                </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeDayScheduleManagement()">閉じる</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 祝日管理モーダル -->
+    <div id="holidayManagementModal" class="modal">
+        <div class="modal-content" style="max-width:700px">
+            <span class="close" onclick="closeHolidayManagement()">&times;</span>
+            <h2 class="modal-header">🎌 祝日管理</h2>
             
             <div class="form-section">
-                <label class="form-label">祝日管理:</label>
+                <label class="form-label">祝日一覧:</label>
                 <div id="holidayList" class="list"></div>
             </div>
             
@@ -418,9 +493,12 @@
                     <button class="action-btn primary" onclick="addHoliday()">追加</button>
                 </div>
             </div>
+            
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeHolidayManagement()">閉じる</button>
+            </div>
         </div>
     </div>
-
     <!-- イベント編集モーダル -->
     <div id="eventModal" class="modal">
         <div class="modal-content">
@@ -524,6 +602,8 @@
     <script src="read-counter.js"></script>
     <script src="app-events.js"></script>
     <script src="conflict-check.js"></script>
+    <script src="repeat-auto-generate.js"></script>
+    <script src="improved-delete.js"></script>
     <script src="app-ui.js"></script>
     <script src="app-export.js"></script>
     <script src="app-main.js"></script>
@@ -533,6 +613,7 @@
     <script src="bulk-delete.js"></script>
     <script src="search.js"></script>
     <script src="holiday-fetch.js"></script>
+    <script src="management-modals.js"></script>
     
    <!-- スタッフセレクトボックス動的更新用スクリプト -->
 <script>
@@ -605,10 +686,7 @@
         const patternSelect = document.getElementById('daySchedulePattern');
         const customTimeSection = document.getElementById('customTimeSection');
         
-        if (patternSelect && customTimeSection) {
-            // 初期状態：パターン①が選択されているのでカスタム時間セクションは非表示
-            customTimeSection.style.display = 'none';
-            
+        if (patternSelect) {
             patternSelect.addEventListener('change', () => {
                 if (patternSelect.value === 'custom') {
                     customTimeSection.style.display = 'flex';

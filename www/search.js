@@ -83,8 +83,30 @@ async function searchByName() {
         
         hideLoading();
         
+        // 今週の月曜日を計算
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0=日曜日, 1=月曜日, ...
+        const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 日曜日の場合は前の月曜日
+        const thisMonday = new Date(today);
+        thisMonday.setDate(today.getDate() + daysToMonday);
+        thisMonday.setHours(0, 0, 0, 0);
+        
+        const thisMondayString = thisMonday.toISOString().split('T')[0]; // YYYY-MM-DD形式
+        
+        console.log('Today:', today.toISOString().split('T')[0]);
+        console.log('This Monday:', thisMondayString);
+        
+        // 今週以降の結果のみをフィルタリング
+        const filteredResults = results.filter(event => {
+            if (!event.date) return false;
+            return event.date >= thisMondayString;
+        });
+        
+        console.log('Total results:', results.length);
+        console.log('Filtered results (this week and later):', filteredResults.length);
+        
         // 結果を日付順にソート
-        results.sort((a, b) => {
+        filteredResults.sort((a, b) => {
             if (a.date !== b.date) {
                 return a.date.localeCompare(b.date);
             }
@@ -95,7 +117,7 @@ async function searchByName() {
         });
         
         // 結果を表示
-        displaySearchResults(results, searchInput);
+        displaySearchResults(filteredResults, searchInput);
         
     } catch (error) {
         console.error('Search error:', error);

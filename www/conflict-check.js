@@ -1,19 +1,31 @@
-// ===== 繰り返し設定時の衝突チェック機能 =====
+// ===== 繰り返し設定時の衝突チェック機能（6ヶ月対応） =====
 
-// 1. 衝突チェックメソッド（Firestoreから直接取得）
+// 1. 衝突チェックメソッド（Firestoreから直接取得）- 6ヶ月対応＆時間範囲対応
 FirebaseScheduleManager.prototype.checkRepeatConflicts = async function(baseEvent, parentId, baseDate) {
     const conflicts = [];
     const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 3);
+    endDate.setMonth(endDate.getMonth() + 6); // ⭐ 6ヶ月に変更
     
     const baseDateTime = this.createLocalDate(baseDate);
     const intervalDays = this.getInterval(baseEvent.repeat);
     let occurrenceCount = 1;
     
-    console.log('=== 衝突チェック開始 ===');
+    console.log('=== 衝突チェック開始（6ヶ月分・時間範囲対応） ===');
     console.log('baseEvent:', baseEvent);
     console.log('parentId:', parentId);
     console.log('interval:', intervalDays, 'days');
+    console.log('endDate:', this.formatDate(endDate));
+    
+    // ⭐ baseEventの時間範囲を計算（衝突チェック用 = 実質時間）
+    const baseStartTime = baseEvent.time;
+    const baseDuration = (baseEvent.type === '40min' || baseEvent.type === 'workinjury40' || baseEvent.type === 'visit') ? 40 : 
+                         (baseEvent.type === '60min') ? 60 : 20;
+    const [baseStartHour, baseStartMinute] = baseStartTime.split(':').map(Number);
+    const baseEndTotalMinutes = baseStartHour * 60 + baseStartMinute + baseDuration;
+    const baseStartMinutes = baseStartHour * 60 + baseStartMinute;
+    const baseEndMinutes = baseEndTotalMinutes;
+    
+    console.log(`baseEvent time range: ${baseStartTime} - ${Math.floor(baseEndMinutes/60)}:${(baseEndMinutes%60).toString().padStart(2,'0')} (${baseDuration}分)`);
     
     while (true) {
         const nextDate = new Date(baseDateTime);
@@ -47,20 +59,35 @@ FirebaseScheduleManager.prototype.checkRepeatConflicts = async function(baseEven
                 }
             });
         } else {
-            // 通常イベント（20分など）の場合
+            // ⭐ 通常イベント - その日のすべてのイベントを取得して時間範囲でチェック
             const snapshot = await db.collection('events')
                 .where('member', '==', baseEvent.member)
                 .where('date', '==', nextDateStr)
-                .where('time', '==', baseEvent.time)
                 .get();
             
             snapshot.forEach(doc => {
-                if (doc.id !== parentId && doc.data().repeatParent !== parentId) {
-                    const data = doc.data();
-                    console.log('衝突検出:', nextDateStr, data);
+                if (doc.id === parentId || doc.data().repeatParent === parentId) return;
+                
+                const data = doc.data();
+                if (!data.time) return;
+                
+                // 既存イベントの時間範囲を計算（衝突チェック用 = 実質時間）
+                const existingStartTime = data.time;
+                const existingDuration = (data.type === '40min' || data.type === 'workinjury40' || data.type === 'visit') ? 40 : 
+                                        (data.type === '60min') ? 60 : 20;
+                const [existingStartHour, existingStartMinute] = existingStartTime.split(':').map(Number);
+                const existingStartMinutes = existingStartHour * 60 + existingStartMinute;
+                const existingEndMinutes = existingStartMinutes + existingDuration;
+                
+                // 時間範囲の重なりをチェック
+                const hasOverlap = (baseStartMinutes < existingEndMinutes) && (baseEndMinutes > existingStartMinutes);
+                
+                if (hasOverlap) {
+                    console.log(`衝突検出: ${nextDateStr} ${existingStartTime} (${data.type})`);
+                    console.log(`  base: ${baseStartMinutes}-${baseEndMinutes}分, existing: ${existingStartMinutes}-${existingEndMinutes}分`);
                     conflicts.push({
                         date: nextDateStr,
-                        time: baseEvent.time,
+                        time: data.time,
                         name: (data.surname || '') + (data.firstname || ''),
                         type: data.type,
                         id: doc.id
@@ -149,11 +176,11 @@ FirebaseScheduleManager.prototype.showConflictModal = function(conflicts, onReso
     };
 };
 
-// 3. スキップ付き繰り返し生成（通常イベント）
+// 3. スキップ付き繰り返し生成（通常イベント）- 6ヶ月対応
 FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(baseEvent, parentId, baseDate, conflicts) {
     const batch = db.batch();
     const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 3);
+    endDate.setMonth(endDate.getMonth() + 6); // ⭐ 6ヶ月に変更
     
     const baseDateTime = this.createLocalDate(baseDate);
     const intervalDays = this.getInterval(baseEvent.repeat);
@@ -162,7 +189,7 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
     let occurrenceCount = 1;
     let createdCount = 0;
     
-    console.log(`Generating with skip - conflict dates:`, conflictDates);
+    console.log(`Generating with skip (6 months) - conflict dates:`, conflictDates);
     
     while (true) {
         const nextDate = new Date(baseDateTime);
@@ -183,6 +210,11 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
             ...baseEvent,
             date: nextDateStr,
             repeatParent: parentId,
+            repeatPattern: {  // ⭐ 繰り返し設定を保存
+                type: baseEvent.repeat,
+                intervalDays: intervalDays,
+                baseDate: baseDate
+            },
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -203,11 +235,11 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
     console.log(`Created ${createdCount} repeat events (skipped ${conflicts.length} conflicts)`);
 };
 
-// 4. スキップ付き繰り返し生成（範囲イベント）
+// 4. スキップ付き繰り返し生成（範囲イベント）- 6ヶ月対応
 FirebaseScheduleManager.prototype.generateRangeRepeatingWithSkip = async function(baseEvent, parentId, baseDate, conflicts) {
     const batch = db.batch();
     const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 3);
+    endDate.setMonth(endDate.getMonth() + 6); // ⭐ 6ヶ月に変更
     
     const baseDateTime = this.createLocalDate(baseDate);
     const intervalDays = this.getInterval(baseEvent.repeat);
@@ -234,6 +266,11 @@ FirebaseScheduleManager.prototype.generateRangeRepeatingWithSkip = async functio
             ...baseEvent,
             date: nextDateStr,
             repeatParent: parentId,
+            repeatPattern: {  // ⭐ 繰り返し設定を保存
+                type: baseEvent.repeat,
+                intervalDays: intervalDays,
+                baseDate: baseDate
+            },
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -254,4 +291,4 @@ FirebaseScheduleManager.prototype.generateRangeRepeatingWithSkip = async functio
     console.log(`Created ${createdCount} range repeat events (skipped ${conflicts.length} conflicts)`);
 };
 
-console.log('✅ Conflict check feature loaded');
+console.log('✅ Conflict check feature loaded (6-month support)');
