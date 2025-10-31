@@ -40,29 +40,34 @@ FirebaseScheduleManager.prototype.exportExcel = async function() {
                 const Share = window.Capacitor?.Plugins?.Share;
                 const Filesystem = window.Capacitor?.Plugins?.Filesystem;
                 
-                if (Share && Filesystem) {
-                    const tempResult = await Filesystem.writeFile({
+                if (Filesystem) {
+                    // ⭐ Step 1: DOCUMENTSフォルダに保存
+                    const result = await Filesystem.writeFile({
                         path: fileName,
                         data: base64Data,
-                        directory: 'CACHE'
+                        directory: 'DOCUMENTS'
                     });
                     
-                    console.log('Temporary Excel file created:', tempResult.uri);
+                    console.log('Excel file saved to DOCUMENTS:', result.uri);
                     
-                    this.showNotification('ファイルを作成しました', 'success');
+                    // 保存完了を通知
+                    this.showNotification(`Excelファイルを保存しました\nDocuments/${fileName}`, 'success');
                     
-                    setTimeout(async () => {
-                        try {
-                            await Share.share({
-                                title: fileName,
-                                text: 'Excelファイル',
-                                url: tempResult.uri,
-                                dialogTitle: '保存先アプリを選択'
-                            });
-                        } catch (shareErr) {
-                            console.log('Share cancelled or failed:', shareErr);
-                        }
-                    }, 300);
+                    // ⭐ Step 2: 共有メニューを表示（任意）
+                    if (Share) {
+                        setTimeout(async () => {
+                            try {
+                                await Share.share({
+                                    title: fileName,
+                                    text: 'Excelファイル',
+                                    url: result.uri,
+                                    dialogTitle: '共有または別の場所に保存'
+                                });
+                            } catch (shareErr) {
+                                console.log('Share cancelled or failed:', shareErr);
+                            }
+                        }, 300);
+                    }
                 } else {
                     XLSX.writeFile(wb, fileName);
                 }
@@ -100,29 +105,34 @@ FirebaseScheduleManager.prototype.exportPDF = async function() {
                 const Share = window.Capacitor?.Plugins?.Share;
                 const Filesystem = window.Capacitor?.Plugins?.Filesystem;
                 
-                if (Share && Filesystem) {
-                    const tempResult = await Filesystem.writeFile({
+                if (Filesystem) {
+                    // ⭐ Step 1: DOCUMENTSフォルダに保存
+                    const result = await Filesystem.writeFile({
                         path: fileName,
                         data: base64Data,
-                        directory: 'CACHE'
+                        directory: 'DOCUMENTS'
                     });
                     
-                    console.log('Temporary PDF file created:', tempResult.uri);
+                    console.log('PDF file saved to DOCUMENTS:', result.uri);
                     
-                    this.showNotification('PDFを作成しました', 'success');
+                    // 保存完了を通知
+                    this.showNotification(`PDFファイルを保存しました\nDocuments/${fileName}`, 'success');
                     
-                    setTimeout(async () => {
-                        try {
-                            await Share.share({
-                                title: fileName,
-                                text: 'PDFファイル',
-                                url: tempResult.uri,
-                                dialogTitle: '保存先アプリを選択'
-                            });
-                        } catch (shareErr) {
-                            console.log('Share cancelled or failed:', shareErr);
-                        }
-                    }, 300);
+                    // ⭐ Step 2: 共有メニューを表示（任意）
+                    if (Share) {
+                        setTimeout(async () => {
+                            try {
+                                await Share.share({
+                                    title: fileName,
+                                    text: 'PDFファイル',
+                                    url: result.uri,
+                                    dialogTitle: '共有または別の場所に保存'
+                                });
+                            } catch (shareErr) {
+                                console.log('Share cancelled or failed:', shareErr);
+                            }
+                        }, 300);
+                    }
                 } else {
                     doc.save(fileName);
                 }
