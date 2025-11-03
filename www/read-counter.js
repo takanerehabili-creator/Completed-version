@@ -123,9 +123,25 @@ class FirestoreReadCounter {
                 .get();
             
             let total = 0;
+            const devices = [];
             snapshot.docs.forEach(doc => {
-                total += doc.data().count || 0;
+                const data = doc.data();
+                total += data.count || 0;
+                devices.push({
+                    id: doc.id,
+                    deviceId: data.deviceId,
+                    count: data.count || 0
+                });
             });
+            
+            // ⭐ デバッグ情報を詳細に出力
+            console.log('=== Read Count Debug Info ===');
+            console.log('Date:', today);
+            console.log('Total devices:', snapshot.size);
+            console.log('Total count:', total);
+            console.log('Devices breakdown:', devices);
+            console.log('Current device:', this.deviceId);
+            console.log('=============================');
             
             localStorage.setItem(this.totalCountKey, String(total));
             localStorage.setItem(this.totalCountTimestampKey, String(Date.now()));

@@ -181,6 +181,24 @@
                     <button class="action-btn primary" onclick="openHolidayManagement()" style="width:100%;padding:15px;font-size:16px">
                         🎌 祝日管理を開く
                     </button>
+                    <!-- ⭐ 古い繰り返し予定チェック機能 -->
+                    <button class="action-btn" onclick="openOldRepeatCheckModal()" style="width:100%;padding:15px;font-size:16px;background:#ff9800;color:white">
+                        🔍 古い繰返し予定をチェック
+                    </button>
+                </div>
+            </div>
+            
+            <!-- ⭐ データ管理セクション（バックアップ＆復元） -->
+            <div class="form-section" style="margin-top:30px;padding-top:20px;border-top:2px solid #eee">
+                <label class="form-label">💾 データ管理:</label>
+                <p style="font-size:13px;color:#666;margin:10px 0">全データのバックアップ作成と復元ができます</p>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                    <button class="action-btn primary" onclick="createBackup()" style="width:100%;padding:15px;font-size:16px;background:linear-gradient(135deg, #4285f4, #34a853);color:white">
+                        💾 バックアップを作成
+                    </button>
+                    <button class="action-btn" onclick="openRestoreModal()" style="width:100%;padding:15px;font-size:16px;background:linear-gradient(135deg, #ff9800, #f57c00);color:white">
+                        📥 バックアップから復元
+                    </button>
                 </div>
             </div>
             
@@ -614,6 +632,8 @@
     <script src="search.js"></script>
     <script src="holiday-fetch.js"></script>
     <script src="management-modals.js"></script>
+    <script src="old-repeat-check.js"></script><!-- ⭐ 古い繰り返し予定チェック機能 -->
+    <script src="backup-restore.js"></script><!-- ⭐ バックアップ＆復元機能 -->
     
    <!-- スタッフセレクトボックス動的更新用スクリプト -->
 <script>

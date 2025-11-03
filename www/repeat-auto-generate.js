@@ -1,4 +1,4 @@
-// ===== 繰り返し予定の自動生成機能 =====
+// ===== 繰り返し予定の自動生成機能（最適化版） =====
 
 /**
  * 要件:
@@ -6,6 +6,9 @@
  * 2. アプリ起動時に「今日から2ヶ月先」までデータがあるかチェック
  * 3. 不足していれば6ヶ月分を追加生成
  * 4. 親イベントが削除されても、子イベントから繰り返し設定を読み取って継続
+ * 
+ * 最適化:
+ * - チェックは毎週月曜日の初回起動時のみ実行（読み取り回数を削減）
  */
 
 // 繰り返しパターンを子イベントに保存するための拡張
@@ -126,9 +129,52 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
     console.log(`=== 範囲イベント生成完了 ===`);
 };
 
-// アプリ起動時のチェック＆自動生成
+// ⭐ 今週の月曜日の日付を取得
+function getThisMonday() {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0=日曜, 1=月曜, ...
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 日曜の場合は前週の月曜
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diff);
+    monday.setHours(0, 0, 0, 0);
+    return monday.toISOString().split('T')[0]; // YYYY-MM-DD
+}
+
+// ⭐ 最適化: チェックが必要か判定
+function shouldRunRepeatCheck() {
+    const lastCheck = localStorage.getItem('lastRepeatCheck');
+    const thisMonday = getThisMonday();
+    
+    console.log('=== Repeat Check Decision ===');
+    console.log('Last check:', lastCheck || 'never');
+    console.log('This Monday:', thisMonday);
+    
+    if (!lastCheck) {
+        // 初回実行
+        console.log('→ First time, should run');
+        return true;
+    }
+    
+    if (lastCheck < thisMonday) {
+        // 前回チェックが今週の月曜より前
+        console.log('→ Last check was before this Monday, should run');
+        return true;
+    }
+    
+    // 今週既にチェック済み
+    console.log('→ Already checked this week, skip');
+    return false;
+}
+
+// アプリ起動時のチェック＆自動生成（最適化版）
 FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function() {
     console.log('=== 繰り返しイベントのチェック開始 ===');
+    
+    // ⭐ 最適化: 週1回のみ実行
+    if (!shouldRunRepeatCheck()) {
+        console.log('⏭️ Skipping repeat check (already done this week)');
+        return;
+    }
     
     const today = new Date();
     const twoMonthsLater = new Date(today);
@@ -217,6 +263,11 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
             }
         }
         
+        // ⭐ チェック完了を記録
+        const thisMonday = getThisMonday();
+        localStorage.setItem('lastRepeatCheck', thisMonday);
+        console.log(`✅ Repeat check completed and recorded: ${thisMonday}`);
+        
         if (generatedCount > 0) {
             console.log(`\n=== ${generatedCount}個の繰り返しグループに追加生成しました ===`);
             this.showNotification(`${generatedCount}個の繰り返し予定を更新しました`, 'info');
@@ -253,11 +304,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // 5秒待ってから実行（初期データロード完了を待つ）
             setTimeout(async () => {
-                console.log('Running automatic repeat check...');
+                console.log('Running automatic repeat check (optimized - weekly on Monday)...');
                 await window.app.checkAndGenerateFutureRepeats();
             }, 5000);
         }
     }, 1000);
 });
 
-console.log('✅ Repeat auto-generate feature loaded');
+console.log('✅ Repeat auto-generate feature loaded (optimized version)');

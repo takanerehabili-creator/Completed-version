@@ -153,11 +153,11 @@ FirebaseScheduleManager.prototype.buildTable = function() {
     
     // ⭐ 追加: 通常イベント（40分・60分・訪問）の事前処理
     this.events.forEach(e => {
-        if (e.time && (e.type === '40min' || e.type === 'workinjury40' || e.type === 'visit' || e.type === '60min')) {
+        if (e.time && (e.type === '40min' || e.type === 'workinjury40' || e.type === '60min' || e.type === 'visit')) {
             const timeIdx = this.timeSlots.indexOf(e.time);
             if (timeIdx !== -1) {
-                // 40分は2セル、60分は3セル占有
-                const cellCount = e.type === '60min' ? 3 : 2;
+                // 60分と訪問は3セル、40分は2セル占有
+                const cellCount = (e.type === '60min' || e.type === 'visit') ? 3 : 2;
                 for (let i = 1; i < cellCount; i++) {
                     if (timeIdx + i < this.timeSlots.length) {
                         const cellKey = `${e.member}-${e.date}-${this.timeSlots[timeIdx + i]}`;
@@ -235,9 +235,9 @@ FirebaseScheduleManager.prototype.buildTable = function() {
                     const normalEvent = this.events.find(e => e.member === memberName && e.date === dateString && e.time === time);
                     let rowspanAttr = '';
                     if (normalEvent) {
-                        if (normalEvent.type === '60min') {
+                        if (normalEvent.type === '60min' || normalEvent.type === 'visit') {
                             rowspanAttr = ' rowspan="3"';
-                        } else if (normalEvent.type === '40min' || normalEvent.type === 'workinjury40' || normalEvent.type === 'visit') {
+                        } else if (normalEvent.type === '40min' || normalEvent.type === 'workinjury40') {
                             rowspanAttr = ' rowspan="2"';
                         }
                     }
@@ -303,9 +303,9 @@ FirebaseScheduleManager.prototype.buildEvent = function(member, date, time, isHo
             </div>`;
         }
         
-        // 60分予約は3セル分の高さ、40分・訪問は2セル分の高さ、20分予約は1セル分
-        const eventHeight = (normalEvent.type === '60min') ? '146px' :
-                           (normalEvent.type === '40min' || normalEvent.type === 'workinjury40' || normalEvent.type === 'visit') ? '96px' : '46px';
+        // 60分・訪問は3セル分の高さ、40分は2セル分の高さ、20分予約は1セル分
+        const eventHeight = (normalEvent.type === '60min' || normalEvent.type === 'visit') ? '146px' :
+                           (normalEvent.type === '40min' || normalEvent.type === 'workinjury40') ? '96px' : '46px';
         
         eventHtmls.push(`<div class="event event-${normalEvent.type}" 
             style="height: ${eventHeight}; z-index: 10;"
@@ -602,7 +602,8 @@ FirebaseScheduleManager.prototype.hideDeleteBtns = function() {
 FirebaseScheduleManager.prototype.calculateModalStartEndTimeSequential = function(memberName, dateString, selectedTime, eventType) {
     const dayEvents = this.events
         .filter(e => e.member === memberName && e.date === dateString && 
-                (e.type === '20min' || e.type === '40min' || 
+                (e.type === '20min' || e.type === '40min' || e.type === '60min' ||
+                 e.type === 'visit' ||
                  e.type === 'workinjury20' || e.type === 'workinjury40' || 
                  e.type === 'accident' || e.type === 'other'))
         .sort((a, b) => this.timeSlots.indexOf(a.time) - this.timeSlots.indexOf(b.time));
@@ -657,8 +658,13 @@ FirebaseScheduleManager.prototype.isConsecutiveEventForSequentialCalculation = f
     
     const currentTimeIndex = this.timeSlots.indexOf(currentEvent.time);
     const prevTimeIndex = this.timeSlots.indexOf(prevEvent.time);
-    const expectedNextIndex = (prevEvent.type === '60min') ? prevTimeIndex + 3 :
-                              (prevEvent.type === '40min' || prevEvent.type === 'workinjury40' || prevEvent.type === 'visit') ? prevTimeIndex + 2 : prevTimeIndex + 1;
+    
+    // ⭐ 訪問は開始セル + 4（最後の占有セルの次）が連続の開始
+    // Excel出力と同じロジック
+    const expectedNextIndex = (prevEvent.type === 'visit') ? prevTimeIndex + 4 :
+                              (prevEvent.type === '60min') ? prevTimeIndex + 3 :
+                              (prevEvent.type === '40min' || prevEvent.type === 'workinjury40') ? prevTimeIndex + 2 : 
+                              prevTimeIndex + 1;
     
     if (currentTimeIndex !== expectedNextIndex) return false;
     

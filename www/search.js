@@ -1,4 +1,4 @@
-// ===== 名前検索機能 =====
+// ===== 名前検索機能（最適化版） =====
 
 // 検索モーダルを開く
 function openSearchModal() {
@@ -18,7 +18,7 @@ function clearSearchResults() {
     document.getElementById('searchResultList').innerHTML = '';
 }
 
-// 名前で検索
+// 名前で検索（最適化版）
 async function searchByName() {
     const searchInput = document.getElementById('searchNameInput').value.trim();
     
@@ -30,7 +30,19 @@ async function searchByName() {
     showLoading('検索中...');
     
     try {
-        // Firestoreから全予定を取得（姓または名に部分一致）
+        // ⭐ 最適化: 検索範囲を今日から3ヶ月先に限定（JavaScript側でフィルタ）
+        const today = new Date();
+        const threeMonthsLater = new Date(today);
+        threeMonthsLater.setMonth(today.getMonth() + 3);
+        
+        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+        const threeMonthsLaterStr = threeMonthsLater.toISOString().split('T')[0];
+        
+        console.log('=== Search Optimization ===');
+        console.log('Search range:', todayStr, 'to', threeMonthsLaterStr);
+        console.log('Search input:', searchInput);
+        
+        // Firestoreから検索（名前のみで検索、日付はJavaScript側でフィルタ）
         const results = [];
         
         // 姓で検索
@@ -41,11 +53,16 @@ async function searchByName() {
         
         surnameQuery.forEach(doc => {
             const data = doc.data();
-            results.push({
-                id: doc.id,
-                ...data
-            });
+            // ⭐ 日付範囲をJavaScript側でフィルタ
+            if (data.date && data.date >= todayStr && data.date <= threeMonthsLaterStr) {
+                results.push({
+                    id: doc.id,
+                    ...data
+                });
+            }
         });
+        
+        console.log('Surname results (filtered):', results.length);
         
         // 名で検索
         const firstnameQuery = await db.collection('events')
@@ -55,14 +72,19 @@ async function searchByName() {
         
         firstnameQuery.forEach(doc => {
             const data = doc.data();
-            // 重複を避ける
-            if (!results.find(r => r.id === doc.id)) {
-                results.push({
-                    id: doc.id,
-                    ...data
-                });
+            // ⭐ 日付範囲をJavaScript側でフィルタ
+            if (data.date && data.date >= todayStr && data.date <= threeMonthsLaterStr) {
+                // 重複を避ける
+                if (!results.find(r => r.id === doc.id)) {
+                    results.push({
+                        id: doc.id,
+                        ...data
+                    });
+                }
             }
         });
+        
+        console.log('Firstname results (filtered):', results.length);
         
         // displayNameでも検索（姓名が結合されている場合）
         const displayNameQuery = await db.collection('events')
@@ -72,19 +94,23 @@ async function searchByName() {
         
         displayNameQuery.forEach(doc => {
             const data = doc.data();
-            // 重複を避ける
-            if (!results.find(r => r.id === doc.id)) {
-                results.push({
-                    id: doc.id,
-                    ...data
-                });
+            // ⭐ 日付範囲をJavaScript側でフィルタ
+            if (data.date && data.date >= todayStr && data.date <= threeMonthsLaterStr) {
+                // 重複を避ける
+                if (!results.find(r => r.id === doc.id)) {
+                    results.push({
+                        id: doc.id,
+                        ...data
+                    });
+                }
             }
         });
+        
+        console.log('DisplayName results (filtered):', results.length);
         
         hideLoading();
         
         // 今週の月曜日を計算
-        const today = new Date();
         const dayOfWeek = today.getDay(); // 0=日曜日, 1=月曜日, ...
         const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 日曜日の場合は前の月曜日
         const thisMonday = new Date(today);
@@ -93,7 +119,7 @@ async function searchByName() {
         
         const thisMondayString = thisMonday.toISOString().split('T')[0]; // YYYY-MM-DD形式
         
-        console.log('Today:', today.toISOString().split('T')[0]);
+        console.log('Today:', todayStr);
         console.log('This Monday:', thisMondayString);
         
         // 今週以降の結果のみをフィルタリング
@@ -150,6 +176,7 @@ function displaySearchResults(results, searchTerm) {
         const date = event.date || '-';
         const time = event.time || event.startTime || '-';
         const member = event.member || '-';
+        const eventId = event.id || ''; // ⭐ イベントIDを取得
         
         // ハイライト表示
         const highlightedName = displayName.replace(
@@ -173,7 +200,7 @@ function displaySearchResults(results, searchTerm) {
         const typeLabel = typeLabels[event.type] || event.type || '-';
         
         html += `
-            <div class="search-result-item" onclick="jumpToDate('${date}')" 
+            <div class="search-result-item" onclick="jumpToDate('${date}', '${eventId}')" 
                  style="background:white;padding:12px;margin-bottom:8px;border-radius:6px;cursor:pointer;border:1px solid #ddd;transition:all 0.2s"
                  onmouseover="this.style.background='#f0f0f0';this.style.borderColor='#4285f4'"
                  onmouseout="this.style.background='white';this.style.borderColor='#ddd'">
@@ -198,24 +225,23 @@ function displaySearchResults(results, searchTerm) {
     listDiv.innerHTML = html;
 }
 
-// 日付にジャンプ
-async function jumpToDate(dateString) {
+// 日付にジャンプ（改善版：該当イベントまでスクロール）
+async function jumpToDate(dateString, eventId) {
     try {
         // モーダルを閉じる
         closeSearchModal();
         
-        showLoading(`${dateString}の週に移動中...`);
+        showLoading(`${dateString}の予定に移動中...`);
         
         // selectCalendarDate関数を使用して日付にジャンプ
         if (app && app.selectCalendarDate) {
             await app.selectCalendarDate(dateString);
             hideLoading();
-            app.showNotification(`${dateString}の週に移動しました`, 'success');
             
-            // 該当日を少し強調表示
-            setTimeout(() => {
-                highlightTargetDate(dateString);
-            }, 500);
+            // ⭐ renderTable完了を待つ仕組み
+            waitForRenderComplete(() => {
+                scrollToEvent(eventId, dateString);
+            });
         } else {
             hideLoading();
             app.showNotification('日付への移動に失敗しました', 'error');
@@ -226,6 +252,162 @@ async function jumpToDate(dateString) {
         hideLoading();
         app.showNotification('日付への移動に失敗しました', 'error');
     }
+}
+
+// renderTable完了を待つ関数
+function waitForRenderComplete(callback, attempts = 0) {
+    const maxAttempts = 20; // 最大10秒待つ（20回 × 500ms）
+    
+    // イベント要素が存在するかチェック（レンダリング完了の目印）
+    const hasEvents = document.querySelectorAll('.event').length > 0;
+    
+    // または、tableReadyForDisplayフラグをチェック
+    const isTableReady = window.app && window.app.tableReadyForDisplay;
+    
+    if (hasEvents || attempts >= maxAttempts) {
+        console.log(`Render complete detected (attempt ${attempts + 1})`);
+        callback();
+    } else {
+        console.log(`Waiting for render... (attempt ${attempts + 1}/${maxAttempts})`);
+        setTimeout(() => {
+            waitForRenderComplete(callback, attempts + 1);
+        }, 500);
+    }
+}
+
+// 該当イベントまでスクロールしてハイライト
+function scrollToEvent(eventId, dateString) {
+    try {
+        // イベント要素を探す（data-event-id属性で検索）
+        const eventElement = document.querySelector(`.event[data-event-id="${eventId}"]`);
+        
+        if (eventElement) {
+            console.log('Found event element:', eventId);
+            
+            // ⭐ メインコンテナを取得（.mainがスクロールコンテナ）
+            const mainContainer = document.querySelector('.main');
+            
+            if (mainContainer) {
+                // イベント要素の位置を取得
+                const eventRect = eventElement.getBoundingClientRect();
+                const containerRect = mainContainer.getBoundingClientRect();
+                
+                // 現在のスクロール位置
+                const startScrollLeft = mainContainer.scrollLeft;
+                const startScrollTop = mainContainer.scrollTop;
+                
+                // イベントを画面中央に配置するための目標スクロール位置を計算
+                const targetScrollLeft = startScrollLeft + (eventRect.left - containerRect.left) - (containerRect.width / 2) + (eventRect.width / 2);
+                const targetScrollTop = startScrollTop + (eventRect.top - containerRect.top) - (containerRect.height / 2) + (eventRect.height / 2);
+                
+                const finalScrollLeft = Math.max(0, targetScrollLeft);
+                const finalScrollTop = Math.max(0, targetScrollTop);
+                
+                console.log('Scrolling to:', { left: finalScrollLeft, top: finalScrollTop });
+                
+                // ⭐ カスタムスクロールアニメーション（1秒かけてスクロール）
+                const duration = 1000; // 1秒
+                const startTime = performance.now();
+                
+                function animateScroll(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    
+                    // イージング関数（ease-in-out）
+                    const easeProgress = progress < 0.5
+                        ? 2 * progress * progress
+                        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                    
+                    // 現在のスクロール位置を計算
+                    const currentLeft = startScrollLeft + (finalScrollLeft - startScrollLeft) * easeProgress;
+                    const currentTop = startScrollTop + (finalScrollTop - startScrollTop) * easeProgress;
+                    
+                    mainContainer.scrollLeft = currentLeft;
+                    mainContainer.scrollTop = currentTop;
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animateScroll);
+                    } else {
+                        // スクロール完了後にハイライト
+                        setTimeout(() => {
+                            highlightEvent(eventElement);
+                        }, 100);
+                    }
+                }
+                
+                requestAnimationFrame(animateScroll);
+            } else {
+                // フォールバック: 通常のscrollIntoView
+                eventElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                    inline: 'center'
+                });
+                
+                setTimeout(() => {
+                    highlightEvent(eventElement);
+                }, 600);
+            }
+            
+            app.showNotification(`予定を表示しました`, 'success');
+        } else {
+            console.log('Event element not found, trying column highlight');
+            // イベント要素が見つからない場合は列をハイライト（フォールバック）
+            highlightTargetDate(dateString);
+            app.showNotification(`${dateString}の週に移動しました`, 'success');
+        }
+        
+    } catch (error) {
+        console.error('Scroll to event error:', error);
+        // エラーの場合は列をハイライト
+        highlightTargetDate(dateString);
+        app.showNotification(`${dateString}の週に移動しました`, 'success');
+    }
+}
+
+// イベントをハイライト表示
+function highlightEvent(eventElement) {
+    // 元のスタイルを保存
+    const originalTransform = eventElement.style.transform;
+    const originalBoxShadow = eventElement.style.boxShadow;
+    const originalZIndex = eventElement.style.zIndex;
+    
+    // アニメーション用のスタイルを追加
+    eventElement.style.transition = 'all 0.3s ease';
+    eventElement.style.transform = 'scale(1.1)';
+    eventElement.style.boxShadow = '0 0 20px 5px rgba(255, 235, 59, 0.8)';
+    eventElement.style.zIndex = '1000';
+    
+    // 点滅アニメーション（3回）
+    let blinkCount = 0;
+    const blinkInterval = setInterval(() => {
+        if (blinkCount >= 6) {
+            clearInterval(blinkInterval);
+            
+            // 元に戻す
+            setTimeout(() => {
+                eventElement.style.transform = originalTransform;
+                eventElement.style.boxShadow = originalBoxShadow;
+                eventElement.style.zIndex = originalZIndex;
+                
+                // トランジション解除
+                setTimeout(() => {
+                    eventElement.style.transition = '';
+                }, 300);
+            }, 500);
+            
+            return;
+        }
+        
+        // 点滅（背景色を交互に変更）
+        if (blinkCount % 2 === 0) {
+            eventElement.style.backgroundColor = '#fff59d'; // 明るい黄色
+        } else {
+            eventElement.style.backgroundColor = ''; // 元の色
+        }
+        
+        blinkCount++;
+    }, 200);
 }
 
 // 該当日を一時的にハイライト表示
@@ -284,4 +466,4 @@ function highlightTargetDate(dateString) {
     }
 }
 
-console.log('✅ Search feature loaded');
+console.log('✅ Search feature loaded (optimized version)');

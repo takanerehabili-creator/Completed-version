@@ -299,9 +299,13 @@ FirebaseScheduleManager.prototype.isConsecutiveEvent = function(events, currentI
     
     const currentTimeIndex = this.timeSlots.indexOf(currentEvent.time);
     const prevTimeIndex = this.timeSlots.indexOf(prevEvent.time);
-    // 労災40分・40分・60分・訪問にも対応
-    const expectedNextIndex = (prevEvent.type === '60min') ? prevTimeIndex + 3 :
-                              (prevEvent.type === '40min' || prevEvent.type === 'workinjury40' || prevEvent.type === 'visit') ? prevTimeIndex + 2 : prevTimeIndex + 1;
+    
+    // ⭐ 訪問は開始セル + 3（最後の占有セルの次）が連続の開始
+    // 例: 9:40開始の訪問 → 9:40, 10:00, 10:20を占有 → 次は10:40（9:40 + 4セル）
+    const expectedNextIndex = (prevEvent.type === 'visit') ? prevTimeIndex + 4 :
+                              (prevEvent.type === '60min') ? prevTimeIndex + 3 :
+                              (prevEvent.type === '40min' || prevEvent.type === 'workinjury40') ? prevTimeIndex + 2 : 
+                              prevTimeIndex + 1;
     
     if (currentTimeIndex !== expectedNextIndex) return false;
     
@@ -536,10 +540,14 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                     break;
                                 case 'visit':
                                     eventBg = 'rgba(255,204,128,0.8)';
-                                    cellH = 72;
-                                    rowspanAttr = ' rowspan="2"';
+                                    cellH = 109;  // 3セル分の高さ（35*3 + 境界2*2）
+                                    rowspanAttr = ' rowspan="3"';
+                                    // 3セル分をマーク
                                     if (timeIdx + 1 < this.timeSlots.length) {
                                         processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
+                                    }
+                                    if (timeIdx + 2 < this.timeSlots.length) {
+                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
                                     }
                                     break;
                                 case 'workinjury20': eventBg = '#fff59d'; break;
