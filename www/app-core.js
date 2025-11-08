@@ -45,6 +45,11 @@ class FirebaseScheduleManager {
         
         console.log('Device:', this.isGalaxyTab ? 'Galaxy Tab' : 'Other');
         
+        // ⭐ 再接続管理用
+        this.reconnectionAttempts = new Map(); // weekKey -> { count, lastAttempt }
+        this.maxReconnectionAttempts = 1; // 自動再接続は1回のみ
+        this.reconnectionCooldown = 60000; // 1分のクールダウン
+        
         this.init();
     }
     
@@ -404,9 +409,18 @@ class FirebaseScheduleManager {
                 }
             }
             
+            // ⭐ 正常にデータ取得できたら再接続カウントをリセット
+            if (this.reconnectionAttempts.has(weekKey)) {
+                this.reconnectionAttempts.delete(weekKey);
+                this.hideReconnectButton();
+            }
+            
             this.updateCacheStatus();
         }, error => {
             console.error(`Week ${weekKey} listener error:`, error);
+            
+            // ⭐ エラー時の自動再接続処理
+            this.handleListenerError(weekKey, error);
         });
         
         this.weekListeners.set(weekKey, unsubscribe);
@@ -580,12 +594,76 @@ class FirebaseScheduleManager {
     async handleAppResume() {
         console.log('App resumed');
         
-        if (navigator.onLine) {
-            this.isOnline = true;
-            this.updateConnectionStatus();
-            
-            await this.createWeekListenerIfNeeded(this.currentWeekKey);
+        // ⭐ 何もしない - Firestoreの自動再接続に任せる
+        console.log('Trusting Firestore auto-reconnection...');
+    }
+    
+    handleListenerError(weekKey, error) {
+        console.log(`Handling listener error for ${weekKey}:`, error.code, error.message);
+        
+        // 再接続が必要なエラーコードかチェック
+        const reconnectableErrors = ['unavailable', 'failed-precondition', 'unauthenticated', 'deadline-exceeded'];
+        if (!reconnectableErrors.includes(error.code)) {
+            console.log('Non-reconnectable error, skipping auto-reconnect');
+            return;
         }
+        
+        // 再接続試行の履歴を取得
+        const attemptInfo = this.reconnectionAttempts.get(weekKey) || { count: 0, lastAttempt: 0 };
+        const now = Date.now();
+        
+        // クールダウン期間中かチェック
+        if (now - attemptInfo.lastAttempt < this.reconnectionCooldown) {
+            console.log(`Cooldown period active for ${weekKey}, skipping reconnection`);
+            return;
+        }
+        
+        // 最大試行回数をチェック
+        if (attemptInfo.count >= this.maxReconnectionAttempts) {
+            console.log(`Max reconnection attempts reached for ${weekKey}`);
+            
+            // ⭐ ユーザーに通知して手動リフレッシュボタンを表示
+            if (weekKey === this.currentWeekKey) {
+                this.showReconnectButton();
+                this.showNotification('接続に問題があります。リフレッシュボタンを押してください。', 'warning');
+            }
+            return;
+        }
+        
+        // 再接続を試行
+        attemptInfo.count++;
+        attemptInfo.lastAttempt = now;
+        this.reconnectionAttempts.set(weekKey, attemptInfo);
+        
+        console.log(`Scheduling reconnection attempt ${attemptInfo.count} for ${weekKey} in 5 seconds...`);
+        
+        setTimeout(async () => {
+            console.log(`Attempting to reconnect listener for ${weekKey}...`);
+            
+            // 既存のリスナーを削除
+            if (this.weekListeners.has(weekKey)) {
+                const unsubscribe = this.weekListeners.get(weekKey);
+                if (unsubscribe) unsubscribe();
+                this.weekListeners.delete(weekKey);
+            }
+            
+            // 新しいリスナーを作成
+            try {
+                await this.createWeekListenerIfNeeded(weekKey);
+                console.log(`Successfully reconnected listener for ${weekKey}`);
+                
+                if (weekKey === this.currentWeekKey) {
+                    this.showNotification('接続を復旧しました', 'success');
+                }
+            } catch (err) {
+                console.error(`Failed to reconnect listener for ${weekKey}:`, err);
+                
+                if (weekKey === this.currentWeekKey) {
+                    this.showReconnectButton();
+                    this.showNotification('接続に問題があります。リフレッシュボタンを押してください。', 'warning');
+                }
+            }
+        }, 5000);
     }
     
     async handleNetworkReconnect() {
@@ -593,7 +671,61 @@ class FirebaseScheduleManager {
         this.isOnline = true;
         this.updateConnectionStatus();
         
-        await this.createWeekListenerIfNeeded(this.currentWeekKey);
+        // ⭐ 何もしない - Firestoreの自動再接続に任せる
+    }
+    
+    showReconnectButton() {
+        const btn = document.getElementById('reconnectBtn');
+        if (btn) {
+            btn.style.display = 'inline-block';
+        }
+        
+        const btnMobile = document.getElementById('reconnectBtnMobile');
+        if (btnMobile) {
+            btnMobile.style.display = 'inline-block';
+        }
+    }
+    
+    hideReconnectButton() {
+        const btn = document.getElementById('reconnectBtn');
+        if (btn) {
+            btn.style.display = 'none';
+        }
+        
+        const btnMobile = document.getElementById('reconnectBtnMobile');
+        if (btnMobile) {
+            btnMobile.style.display = 'none';
+        }
+    }
+    
+    async manualReconnect() {
+        console.log('Manual reconnect initiated by user');
+        
+        const currentWeek = this.currentWeekKey;
+        
+        // 再接続カウントをリセット
+        this.reconnectionAttempts.delete(currentWeek);
+        
+        // 既存のリスナーを削除
+        if (this.weekListeners.has(currentWeek)) {
+            const unsubscribe = this.weekListeners.get(currentWeek);
+            if (unsubscribe) unsubscribe();
+            this.weekListeners.delete(currentWeek);
+        }
+        
+        this.hideReconnectButton();
+        showLoading('再接続中...');
+        
+        try {
+            await this.createWeekListenerIfNeeded(currentWeek);
+            this.showNotification('接続を復旧しました', 'success');
+        } catch (error) {
+            console.error('Manual reconnect failed:', error);
+            this.showNotification('再接続に失敗しました', 'error');
+            this.showReconnectButton();
+        } finally {
+            hideLoading();
+        }
     }
     
     showNotification(msg, type = 'success') {

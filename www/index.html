@@ -34,6 +34,7 @@
                 <button class="btn" onclick="goToToday()">今日</button>
                 <button class="btn" id="bulkMenuBtn" onclick="toggleBulkMenu()">一括</button>
                 <button class="btn" onclick="openSearchModal()">検索</button>
+                <button class="btn" id="reconnectBtn" onclick="if(app) app.manualReconnect()" style="display:none;background:#ff9800;color:white;">🔄 再接続</button>
                 
                 <!-- 一括メニュー（初期状態は非表示） -->
                 <div id="bulkMenuButtons" style="display:none;">
@@ -57,6 +58,7 @@
                         <button class="btn" onclick="goToToday()">今日</button>
                         <button class="btn" id="bulkMenuBtnMobile" onclick="toggleBulkMenu()">一括</button>
                         <button class="btn" onclick="openSearchModal()">検索</button>
+                        <button class="btn" id="reconnectBtnMobile" onclick="if(app) app.manualReconnect()" style="display:none;background:#ff9800;color:white;font-size:20px;padding:4px 8px;">🔄</button>
                         <span class="cache-status" id="cacheStatusMobile">キャッシュ: 0週</span>
                     </div>
                 </div>
