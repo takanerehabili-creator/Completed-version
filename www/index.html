@@ -561,6 +561,16 @@
                     <div class="type-option type-other" data-type="other">その他</div>
                 </div>
             </div>
+            <div class="form-section" id="newPatientSection" style="display:none">
+                <label class="form-label">新患:</label>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="newPatientToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span id="newPatientLabel" style="font-size:14px;color:#666">既存患者</span>
+                </div>
+            </div>
             <div class="form-section" id="repeatSection">
                 <label class="form-label">繰り返し:</label>
                 <select id="repeatSelect" class="form-select">
@@ -569,6 +579,17 @@
                     <option value="biweekly1">隔週(1週間おき)</option>
                     <option value="biweekly2">隔週(2週間おき)</option>
                 </select>
+            </div>
+            <div class="form-section" id="conflictCheckSection" style="display:none">
+                <label class="form-label">衝突チェック:</label>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="conflictCheckToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span id="conflictCheckLabel" style="font-size:14px;color:#666">OFF（チェックしない）</span>
+                </div>
+                <p style="font-size:12px;color:#999;margin-top:8px">ONにすると既存予定との衝突をチェックします</p>
             </div>
             <div class="modal-actions">
                 <button class="action-btn danger" id="deleteButton" onclick="deleteEvent()" style="display:none">削除</button>

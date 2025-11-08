@@ -307,7 +307,10 @@ FirebaseScheduleManager.prototype.buildEvent = function(member, date, time, isHo
         const eventHeight = (normalEvent.type === '60min' || normalEvent.type === 'visit') ? '146px' :
                            (normalEvent.type === '40min' || normalEvent.type === 'workinjury40') ? '96px' : '46px';
         
-        eventHtmls.push(`<div class="event event-${normalEvent.type}" 
+        // ⭐ 新患クラスを追加
+        const newPatientClass = normalEvent.isNewPatient ? ' new-patient' : '';
+        
+        eventHtmls.push(`<div class="event event-${normalEvent.type}${newPatientClass}" 
             style="height: ${eventHeight}; z-index: 10;"
             draggable="true" 
             data-event-id="${normalEvent.id}">
@@ -431,6 +434,28 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
             if (o.dataset.type === existingEvent.type) o.classList.add('selected');
         });
         
+        // ⭐ 新患トグルを設定
+        const newPatientToggle = document.getElementById('newPatientToggle');
+        const newPatientLabel = document.getElementById('newPatientLabel');
+        if (existingEvent.isNewPatient) {
+            newPatientToggle.checked = true;
+            newPatientLabel.textContent = '新患';
+        } else {
+            newPatientToggle.checked = false;
+            newPatientLabel.textContent = '既存患者';
+        }
+        
+        // ⭐ 衝突チェックセクションの表示制御
+        const conflictCheckSection = document.getElementById('conflictCheckSection');
+        if (conflictCheckSection) {
+            const repeatValue = existingEvent.repeat || 'none';
+            if (repeatValue !== 'none') {
+                conflictCheckSection.style.display = 'block';
+            } else {
+                conflictCheckSection.style.display = 'none';
+            }
+        }
+        
         this.toggleInputs(existingEvent.type);
         
         if (existingEvent.startTime && existingEvent.endTime) {
@@ -445,6 +470,22 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
         
         document.getElementById('surnameInput').value = '';
         document.getElementById('firstnameInput').value = '';
+        
+        // ⭐ 新患トグルをリセット
+        const newPatientToggle = document.getElementById('newPatientToggle');
+        const newPatientLabel = document.getElementById('newPatientLabel');
+        newPatientToggle.checked = false;
+        newPatientLabel.textContent = '既存患者';
+        
+        // ⭐ 衝突チェックトグルをリセット
+        const conflictCheckToggle = document.getElementById('conflictCheckToggle');
+        const conflictCheckLabel = document.getElementById('conflictCheckLabel');
+        const conflictCheckSection = document.getElementById('conflictCheckSection');
+        if (conflictCheckToggle && conflictCheckLabel && conflictCheckSection) {
+            conflictCheckToggle.checked = false;
+            conflictCheckLabel.textContent = 'OFF（チェックしない）';
+            conflictCheckSection.style.display = 'none';
+        }
         
         document.getElementById('repeatSelect').value = 'none';
         document.querySelectorAll('.type-option').forEach(o => o.classList.remove('selected'));
@@ -483,16 +524,28 @@ FirebaseScheduleManager.prototype.toggleInputs = function(type) {
     const firstname = document.getElementById('firstnameSection');
     const timeRange = document.getElementById('timeRangeSection');
     const repeat = document.getElementById('repeatSection');
+    const newPatientSection = document.getElementById('newPatientSection');
+    
+    // ⭐ 新患トグルは対象の予定タイプでのみ表示
+    const newPatientTypes = ['20min', '40min', '60min', 'visit', 'workinjury20', 'workinjury40', 'accident'];
     
     if (type === '20min' || type === '40min' || type === '60min' || type === 'visit' || type === 'workinjury20' || type === 'workinjury40' || type === 'accident' || type === 'other') {
         surname.classList.remove('hidden');
         firstname.classList.remove('hidden');
         timeRange.style.display = 'none';
         repeat.classList.remove('hidden');
+        
+        // ⭐ 新患トグルの表示制御
+        if (newPatientTypes.includes(type)) {
+            newPatientSection.style.display = 'block';
+        } else {
+            newPatientSection.style.display = 'none';
+        }
     } else if (type === 'day' || type === 'meeting') {
         surname.classList.add('hidden');
         firstname.classList.add('hidden');
         timeRange.style.display = 'block';
+        newPatientSection.style.display = 'none';
         
         // デイと担会は両方とも繰り返しを非表示
         repeat.classList.add('hidden');

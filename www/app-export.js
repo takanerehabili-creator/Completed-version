@@ -517,10 +517,16 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                         
                         if (event) {
                             let eventBg = '', cellH = 35;
+                            
+                            // ⭐ 新患の場合は濃い色を使用
+                            const isNewPatient = event.isNewPatient;
+                            
                             switch (event.type) {
-                                case '20min': eventBg = 'rgba(173,216,230,0.8)'; break;
+                                case '20min': 
+                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
+                                    break;
                                 case '40min': 
-                                    eventBg = 'rgba(173,216,230,0.8)'; 
+                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
                                     cellH = 72;
                                     rowspanAttr = ' rowspan="2"';
                                     if (timeIdx + 1 < this.timeSlots.length) {
@@ -528,7 +534,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                     }
                                     break;
                                 case '60min': 
-                                    eventBg = 'rgba(173,216,230,0.8)'; 
+                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
                                     cellH = 109;
                                     rowspanAttr = ' rowspan="3"';
                                     if (timeIdx + 1 < this.timeSlots.length) {
@@ -539,10 +545,9 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                     }
                                     break;
                                 case 'visit':
-                                    eventBg = 'rgba(255,204,128,0.8)';
-                                    cellH = 109;  // 3セル分の高さ（35*3 + 境界2*2）
+                                    eventBg = isNewPatient ? '#f57c00' : 'rgba(255,204,128,0.8)';
+                                    cellH = 109;
                                     rowspanAttr = ' rowspan="3"';
-                                    // 3セル分をマーク
                                     if (timeIdx + 1 < this.timeSlots.length) {
                                         processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
                                     }
@@ -550,9 +555,11 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                         processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
                                     }
                                     break;
-                                case 'workinjury20': eventBg = '#fff59d'; break;
+                                case 'workinjury20': 
+                                    eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
+                                    break;
                                 case 'workinjury40': 
-                                    eventBg = '#fff59d'; 
+                                    eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
                                     cellH = 72;
                                     rowspanAttr = ' rowspan="2"';
                                     if (timeIdx + 1 < this.timeSlots.length) {
@@ -562,6 +569,9 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                 case 'accident': eventBg = '#ffcdd2'; break;
                                 case 'other': eventBg = '#e1bee7'; break;
                             }
+                            
+                            // ⭐ 新患の場合は文字色を白に
+                            const textColor = isNewPatient && (event.type === '20min' || event.type === '40min' || event.type === '60min' || event.type === 'visit') ? '#fff' : '#000';
                             
                             let displayContent = '';
                             if (event.type === '20min' || event.type === '40min' || event.type === '60min' ||
@@ -580,7 +590,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                 }
                             }
                             
-                            content = `<div style="background:${eventBg};color:#000;padding:4px;border-radius:4px;height:${cellH}px;display:flex;align-items:center;justify-content:center;font-weight:bold;line-height:1.1;flex-direction:column">${displayContent}</div>`;
+                            content = `<div style="background:${eventBg};color:${textColor};padding:4px;border-radius:4px;height:${cellH}px;display:flex;align-items:center;justify-content:center;font-weight:bold;line-height:1.1;flex-direction:column">${displayContent}</div>`;
                             html += `<td${rowspanAttr} style="${cellStyle}">${content}</td>`;
                         } else {
                             content = `<div style="color:#ddd;font-size:12px;display:flex;align-items:center;justify-content:center;height:100%">${time}</div>`;

@@ -154,6 +154,16 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                 createdAt: new Date(),
                 updatedAt: new Date()
             };
+            
+            // ⭐ 新患フラグを設定（OFFの場合は明示的にfalseを設定）
+            const newPatientToggle = document.getElementById('newPatientToggle');
+            if (newPatientToggle) {
+                if (newPatientToggle.checked) {
+                    eventData.isNewPatient = true;
+                } else {
+                    eventData.isNewPatient = false;
+                }
+            }
 
             if (this.editingEvent) {
                 eventData.id = this.editingEvent.id;
@@ -176,34 +186,45 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             } else {
                 const newId = await this.saveEventToFirestore(eventData);
                 if (repeat !== 'none') {
-                    // ⭐ 繰り返し生成開始の通知
-                    this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
+                    // ⭐ 衝突チェックトグルの状態を確認
+                    const conflictCheckToggle = document.getElementById('conflictCheckToggle');
+                    const shouldCheckConflict = conflictCheckToggle && conflictCheckToggle.checked;
                     
-                    const conflicts = await this.checkRepeatConflicts(eventData, newId, date);
-                    if (conflicts && conflicts.length > 0) {
-                        this.showConflictModal(conflicts, async (action) => {
-                            if (action === 'replace') {
-                                this.showNotification('繰り返し予定を生成中...（既存を置き換え）', 'info');
-                                for (const c of conflicts) await db.collection('events').doc(c.id).delete();
-                                await this.generateRepeatingInFirestore(eventData, newId, date);
-                                this.showNotification('繰り返し予定を作成しました（既存を置き換え）', 'success');
-                                this.closeModal();
-                                location.reload();
-                            } else if (action === 'skip') {
-                                this.showNotification('繰り返し予定を生成中...（衝突日をスキップ）', 'info');
-                                await this.generateRepeatingWithSkip(eventData, newId, date, conflicts);
-                                this.showNotification('繰り返し予定を作成しました（衝突日をスキップ）', 'success');
-                                this.closeModal();
-                                location.reload();
-                            } else {
-                                await db.collection('events').doc(newId).delete();
-                                this.showNotification('繰り返し設定をキャンセルしました', 'info');
-                            }
-                        });
-                        return;
+                    if (shouldCheckConflict) {
+                        // ⭐ 衝突チェックON: 従来の処理
+                        this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
+                        
+                        const conflicts = await this.checkRepeatConflicts(eventData, newId, date);
+                        if (conflicts && conflicts.length > 0) {
+                            this.showConflictModal(conflicts, async (action) => {
+                                if (action === 'replace') {
+                                    this.showNotification('繰り返し予定を生成中...（既存を置き換え）', 'info');
+                                    for (const c of conflicts) await db.collection('events').doc(c.id).delete();
+                                    await this.generateRepeatingInFirestore(eventData, newId, date);
+                                    this.showNotification('繰り返し予定を作成しました（既存を置き換え）', 'success');
+                                    this.closeModal();
+                                    location.reload();
+                                } else if (action === 'skip') {
+                                    this.showNotification('繰り返し予定を生成中...（衝突日をスキップ）', 'info');
+                                    await this.generateRepeatingWithSkip(eventData, newId, date, conflicts);
+                                    this.showNotification('繰り返し予定を作成しました（衝突日をスキップ）', 'success');
+                                    this.closeModal();
+                                    location.reload();
+                                } else {
+                                    await db.collection('events').doc(newId).delete();
+                                    this.showNotification('繰り返し設定をキャンセルしました', 'info');
+                                }
+                            });
+                            return;
+                        }
+                        await this.generateRepeatingInFirestore(eventData, newId, date);
+                        this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
+                    } else {
+                        // ⭐ 衝突チェックOFF: 衝突チェックなしで直接生成
+                        this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
+                        await this.generateRepeatingInFirestore(eventData, newId, date);
+                        this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
                     }
-                    await this.generateRepeatingInFirestore(eventData, newId, date);
-                    this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
                 } else {
                     this.showNotification('予定を追加しました', 'success');
                 }
