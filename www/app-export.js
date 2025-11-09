@@ -178,9 +178,7 @@ FirebaseScheduleManager.prototype.generateStaffExcelData = function(staff) {
         const isHol = this.isHoliday(this.formatDate(date));
         const holidayName = this.getHolidayName(this.formatDate(date));
         
-        const dateText = isHol ? 
-            `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}(${days[dayOfWeek]}) ${holidayName}` : 
-            `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}(${days[dayOfWeek]})`;
+        const dateText = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
         
         headerRow1.push(dateText, '', '', '', '');
         headerRow2.push('名前', '開始時間', '終了時間', '単位', '種類');
@@ -332,7 +330,7 @@ FirebaseScheduleManager.prototype.createPDF = async function(doc, startDay, isFi
             document.body.appendChild(temp);
             
             const header = document.createElement('div');
-            header.style.cssText = 'background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;padding:12px;text-align:center;font-weight:bold;font-size:22px';
+            header.style.cssText = 'background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;padding:8px;text-align:center;font-weight:bold;font-size:20px';
             const start = new Date(this.currentStartDate);
             start.setDate(start.getDate() + startDay);
             const end = new Date(this.currentStartDate);
@@ -354,7 +352,7 @@ FirebaseScheduleManager.prototype.createPDF = async function(doc, startDay, isFi
             tableDiv.appendChild(table);
             temp.appendChild(tableDiv);
             
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 2000));
             const canvas = await html2canvas(temp, {scale:1,useCORS:true,backgroundColor:'#fff',logging:false});
             
             if (!isFirst) doc.addPage();
@@ -400,7 +398,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
     }
     
     const cellW = totalColumns > 0 ? Math.floor(1750 / totalColumns) : 140;
-    let html = '<thead><tr><th style="background:#4285f4;color:#fff;padding:10px;text-align:center;font-weight:bold;border:1px solid #ddd;width:100px;font-size:15px">時間</th>';
+    let html = '<thead><tr><th style="background:#4285f4;color:#fff;padding:10px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:15px">時間</th>';
     
     for (let d = 0; d < daysToShow; d++) {
         const date = new Date(this.currentStartDate);
@@ -415,10 +413,13 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
         
         const colspan = isHol ? 1 : Math.max(dailyStaff[d].length, 1);
         const borderRight = d < daysToShow - 1 ? 'border-right:5px solid #2c3e50;' : '';
-        html += `<th style="background:${bg};color:${color};padding:10px;text-align:center;font-weight:bold;border:1px solid #ddd;${borderRight}font-size:15px" colspan="${colspan}">${text}</th>`;
+        html += `<th style="background:${bg};color:${color};padding:8px;text-align:center;font-weight:bold;border:1px solid #ddd;${borderRight}font-size:15px" colspan="${colspan}">${text}</th>`;
+        if (d < daysToShow - 1) {
+            html += `<th style="background:#4285f4;color:#fff;padding:10px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:15px">時間</th>`;
+        }
     }
     
-    html += '</tr><tr><th style="background:#34a853;color:#fff;padding:8px;text-align:center;font-weight:bold;border:1px solid #ddd;width:100px;font-size:13px"></th>';
+    html += '</tr><tr><th style="background:#34a853;color:#fff;padding:8px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:13px"></th>';
     
     for (let d = 0; d < daysToShow; d++) {
         const date = new Date(this.currentStartDate);
@@ -437,6 +438,9 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                 html += `<th style="background:#fff;color:#000;padding:8px;text-align:center;font-weight:bold;border:1px solid #ddd;${borderRight}width:${cellW}px;font-size:14px;line-height:1.2">${m.surname}<br>${m.firstname}</th>`;
             });
         }
+        if (d < daysToShow - 1) {
+            html += `<th style="background:#34a853;color:#fff;padding:8px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:13px"></th>`;
+        }
     }
     html += '</tr></thead><tbody>';
     
@@ -445,7 +449,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
     this.timeSlots.forEach((time, timeIdx) => {
         const isLunch = this.isLunchTime(time);
         const lunchBg = isLunch ? 'background:#f5f5f5;' : 'background:#fff;';
-        html += `<tr><td style="${lunchBg}padding:6px;text-align:center;font-weight:bold;border:1px solid #ddd;width:100px;font-size:13px">${time}</td>`;
+        html += `<tr><td style="${lunchBg}padding:6px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:13px">${time}</td>`;
         
         for (let d = 0; d < daysToShow; d++) {
             const date = new Date(this.currentStartDate);
@@ -455,7 +459,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
             
             if (isHol) {
                 const borderRight = d < daysToShow - 1 ? 'border-right:5px solid #2c3e50;' : '';
-                html += `<td style="${lunchBg}padding:3px;border:1px solid #ddd;${borderRight}width:${cellW}px;height:35px;background:#ffc0cb;text-align:center;vertical-align:middle;font-size:15px"></td>`;
+                html += `<td style="${lunchBg}padding:2px;border:1px solid #ddd;${borderRight}width:${cellW}px;height:38px;background:#ffc0cb;text-align:center;vertical-align:middle;font-size:20px"></td>`;
             } else {
                 dailyStaff[d].forEach((m, idx) => {
                     const memberName = `${m.surname || ''}${m.firstname || ''}`;
@@ -470,9 +474,11 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                 
                 // ⭐ この3行を追加
                 const isDayCell = this.isDaySchedule(memberName, dateString, time);
+                const isLeaveCell = this.isStaffLeave(memberName, dateString, time);
                 const dayBg = isDayCell ? 'background:rgba(165,214,167,0.4);' : '';
+                const leaveBg = isLeaveCell ? 'background:rgba(158,158,158,0.6);' : '';
                 
-                let cellStyle = `${lunchBg}${dayBg}padding:3px;border:1px solid #ddd;${borderRight}width:${cellW}px;height:35px;position:relative;text-align:center;vertical-align:middle;font-size:15px`;
+                let cellStyle = `${lunchBg}${dayBg}${leaveBg}padding:2px;border:1px solid #ddd;${borderRight}width:${cellW}px;height:38px;position:relative;text-align:center;vertical-align:middle;font-size:20px`;
                 let content = '';
                 let rowspanAttr = '';
                     
@@ -489,7 +495,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                         let endIdx = this.timeSlots.indexOf(rangeEvent.endTime);
                         if (endIdx === -1) endIdx = this.timeSlots.length;
                         const rowspan = endIdx - startIdx;
-                        const cellH = (rowspan * 35) + ((rowspan - 1) * 2);
+                        const cellH = (rowspan * 38) + ((rowspan - 1) * 2);
                         
                         for (let i = startIdx + 1; i < endIdx; i++) {
                             processedCells.set(`${memberName}-${dateString}-${this.timeSlots[i]}`, true);
@@ -513,91 +519,100 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                         rowspanAttr = ` rowspan="${rowspan}"`;
                         html += `<td${rowspanAttr} style="${cellStyle}">${content}</td>`;
                     } else {
-                        const event = this.events.find(e => e.member === memberName && e.date === dateString && e.time === time);
-                        
-                        if (event) {
-                            let eventBg = '', cellH = 35;
-                            
-                            // ⭐ 新患の場合は濃い色を使用
-                            const isNewPatient = event.isNewPatient;
-                            
-                            switch (event.type) {
-                                case '20min': 
-                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
-                                    break;
-                                case '40min': 
-                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
-                                    cellH = 72;
-                                    rowspanAttr = ' rowspan="2"';
-                                    if (timeIdx + 1 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
-                                    }
-                                    break;
-                                case '60min': 
-                                    eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
-                                    cellH = 109;
-                                    rowspanAttr = ' rowspan="3"';
-                                    if (timeIdx + 1 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
-                                    }
-                                    if (timeIdx + 2 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
-                                    }
-                                    break;
-                                case 'visit':
-                                    eventBg = isNewPatient ? '#f57c00' : 'rgba(255,204,128,0.8)';
-                                    cellH = 109;
-                                    rowspanAttr = ' rowspan="3"';
-                                    if (timeIdx + 1 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
-                                    }
-                                    if (timeIdx + 2 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
-                                    }
-                                    break;
-                                case 'workinjury20': 
-                                    eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
-                                    break;
-                                case 'workinjury40': 
-                                    eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
-                                    cellH = 72;
-                                    rowspanAttr = ' rowspan="2"';
-                                    if (timeIdx + 1 < this.timeSlots.length) {
-                                        processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
-                                    }
-                                    break;
-                                case 'accident': eventBg = '#ffcdd2'; break;
-                                case 'other': eventBg = '#e1bee7'; break;
-                            }
-                            
-                            // ⭐ 新患の場合は文字色を白に
-                            const textColor = isNewPatient && (event.type === '20min' || event.type === '40min' || event.type === '60min' || event.type === 'visit') ? '#fff' : '#000';
-                            
-                            let displayContent = '';
-                            if (event.type === '20min' || event.type === '40min' || event.type === '60min' ||
-                                event.type === 'visit' ||
-                                event.type === 'workinjury20' || event.type === 'workinjury40' || 
-                                event.type === 'accident' || event.type === 'other') {
-                                const surname = event.surname || '';
-                                const firstname = event.firstname || '';
-                                const getSize = text => text.length <= 4 ? '13.5px' : text.length === 5 ? '11px' : '9px';
-                                const sDisplay = surname.substring(0, 10);
-                                const fDisplay = firstname.substring(0, 10);
-                                if (fDisplay) {
-                                    displayContent = `<div style="line-height:1.1"><div style="font-size:${getSize(surname)}">${sDisplay}</div><div style="font-size:${getSize(firstname)}">${fDisplay}</div></div>`;
-                                } else {
-                                    displayContent = `<div style="line-height:1.1"><div style="font-size:${getSize(surname)}">${sDisplay}</div></div>`;
-                                }
-                            }
-                            
-                            content = `<div style="background:${eventBg};color:${textColor};padding:4px;border-radius:4px;height:${cellH}px;display:flex;align-items:center;justify-content:center;font-weight:bold;line-height:1.1;flex-direction:column">${displayContent}</div>`;
-                            html += `<td${rowspanAttr} style="${cellStyle}">${content}</td>`;
-                        } else {
-                            content = `<div style="color:#ddd;font-size:12px;display:flex;align-items:center;justify-content:center;height:100%">${time}</div>`;
+                        // ⭐ 有給・公休が設定されている場合は予約データを表示しない
+                        if (isLeaveCell) {
+                            content = '';
                             html += `<td style="${cellStyle}">${content}</td>`;
+                        } else {
+                            const event = this.events.find(e => e.member === memberName && e.date === dateString && e.time === time);
+                        
+                            if (event) {
+                                let eventBg = '', cellH = 38;
+                            
+                                // ⭐ 新患の場合は濃い色を使用
+                                const isNewPatient = event.isNewPatient;
+                            
+                                switch (event.type) {
+                                    case '20min': 
+                                        eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
+                                        break;
+                                    case '40min': 
+                                        eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
+                                        cellH = 78;
+                                        rowspanAttr = ' rowspan="2"';
+                                        if (timeIdx + 1 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
+                                        }
+                                        break;
+                                    case '60min': 
+                                        eventBg = isNewPatient ? '#0288d1' : 'rgba(173,216,230,0.8)'; 
+                                        cellH = 118;
+                                        rowspanAttr = ' rowspan="3"';
+                                        if (timeIdx + 1 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
+                                        }
+                                        if (timeIdx + 2 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
+                                        }
+                                        break;
+                                    case 'visit':
+                                        eventBg = isNewPatient ? '#f57c00' : 'rgba(255,204,128,0.8)';
+                                        cellH = 118;
+                                        rowspanAttr = ' rowspan="3"';
+                                        if (timeIdx + 1 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
+                                        }
+                                        if (timeIdx + 2 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 2]}`, true);
+                                        }
+                                        break;
+                                    case 'workinjury20': 
+                                        eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
+                                        break;
+                                    case 'workinjury40': 
+                                        eventBg = isNewPatient ? '#f9a825' : '#fff59d'; 
+                                        cellH = 78;
+                                        rowspanAttr = ' rowspan="2"';
+                                        if (timeIdx + 1 < this.timeSlots.length) {
+                                            processedCells.set(`${memberName}-${dateString}-${this.timeSlots[timeIdx + 1]}`, true);
+                                        }
+                                        break;
+                                    case 'accident': eventBg = '#ffcdd2'; break;
+                                    case 'other': eventBg = '#e1bee7'; break;
+                                }
+                            
+                                // ⭐ 新患の場合は文字色を白に
+                                const textColor = isNewPatient && (event.type === '20min' || event.type === '40min' || event.type === '60min' || event.type === 'visit') ? '#fff' : '#000';
+                            
+                                let displayContent = '';
+                                if (event.type === '20min' || event.type === '40min' || event.type === '60min' ||
+                                    event.type === 'visit' ||
+                                    event.type === 'workinjury20' || event.type === 'workinjury40' || 
+                                    event.type === 'accident' || event.type === 'other') {
+                                    const surname = event.surname || '';
+                                    const firstname = event.firstname || '';
+                                    const getSize = text => text.length <= 4 ? '13.5px' : text.length === 5 ? '11px' : '9px';
+                                    const sDisplay = surname.substring(0, 10);
+                                    const fDisplay = firstname.substring(0, 10);
+                                    if (fDisplay) {
+                                        displayContent = `<div style="line-height:1.1"><div style="font-size:${getSize(surname)}">${sDisplay}</div><div style="font-size:${getSize(firstname)}">${fDisplay}</div></div>`;
+                                    } else {
+                                        displayContent = `<div style="line-height:1.1"><div style="font-size:${getSize(surname)}">${sDisplay}</div></div>`;
+                                    }
+                                }
+                            
+                                content = `<div style="background:${eventBg};color:${textColor};padding:4px;border-radius:4px;height:${cellH}px;display:flex;align-items:center;justify-content:center;font-weight:bold;line-height:1.1;flex-direction:column">${displayContent}</div>`;
+                                html += `<td${rowspanAttr} style="${cellStyle}">${content}</td>`;
+                            } else {
+                                content = `<div style="color:#ddd;font-size:12px;display:flex;align-items:center;justify-content:center;height:100%">${time}</div>`;
+                                html += `<td style="${cellStyle}">${content}</td>`;
+                            }
                         }
                     }
                 });
+            }
+            if (d < daysToShow - 1) {
+                html += `<td style="${lunchBg}padding:6px;text-align:center;font-weight:bold;border:1px solid #ddd;width:50px;font-size:13px">${time}</td>`;
             }
         }
         html += '</tr>';
