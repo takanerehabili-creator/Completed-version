@@ -28,6 +28,7 @@ class FirebaseScheduleManager {
         this.weekCache = new Map();
         this.weekListeners = new Map();
         this.loadedWeeks = new Set();
+        this.deletedEventIds = new Set(); // ⭐ 削除済みイベントのトラッキング（ゾンビ化防止）
         
         // カレンダー用
         this.calendarCurrentDate = new Date();
@@ -397,7 +398,14 @@ class FirebaseScheduleManager {
             const weekEvents = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })).filter(event => {
+                // ⭐ 削除済みイベントを無視（ゾンビ化防止）
+                if (this.deletedEventIds && this.deletedEventIds.has(event.id)) {
+                    console.log(`⚠️ Ignoring deleted event from listener: ${event.id}`);
+                    return false;
+                }
+                return true;
+            });
             
             this.weekCache.set(weekKey, weekEvents);
             this.loadedWeeks.add(weekKey);

@@ -330,7 +330,7 @@ FirebaseScheduleManager.prototype.createPDF = async function(doc, startDay, isFi
             document.body.appendChild(temp);
             
             const header = document.createElement('div');
-            header.style.cssText = 'background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;padding:8px;text-align:center;font-weight:bold;font-size:20px';
+            header.style.cssText = 'background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;padding:4px;text-align:center;font-weight:bold;font-size:20px';
             const start = new Date(this.currentStartDate);
             start.setDate(start.getDate() + startDay);
             const end = new Date(this.currentStartDate);
@@ -345,7 +345,7 @@ FirebaseScheduleManager.prototype.createPDF = async function(doc, startDay, isFi
             temp.appendChild(header);
             
             const tableDiv = document.createElement('div');
-            tableDiv.style.cssText = 'padding:4px;background:#fff';
+            tableDiv.style.cssText = 'padding:2px;background:#fff';
             const table = document.createElement('table');
             table.style.cssText = 'border-collapse:collapse;width:100%;font-size:13px;font-family:sans-serif';
             table.innerHTML = this.build3DayPDF(startDay);
@@ -356,16 +356,16 @@ FirebaseScheduleManager.prototype.createPDF = async function(doc, startDay, isFi
             const canvas = await html2canvas(temp, {scale:1,useCORS:true,backgroundColor:'#fff',logging:false});
             
             if (!isFirst) doc.addPage();
-            const pdfW = 277, pdfH = 190;
+            const pdfW = 287, pdfH = 200;
             const imgW = pdfW, imgH = (canvas.height * imgW) / canvas.width;
             if (imgH > pdfH) {
                 const adjW = (canvas.width * pdfH) / canvas.height;
                 const xOffset = (pdfW - adjW) / 2;
-                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 5 + xOffset, 5, adjW, pdfH);
+                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 2 + xOffset, 2, adjW, pdfH);
             } else {
                 // 下寄りに配置: yOffsetを計算して下に配置
                 const yOffset = pdfH - imgH;
-                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 5, 5 + yOffset, imgW, imgH);
+                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 2, 2 + yOffset, imgW, imgH);
             }
             document.body.removeChild(temp);
         } catch (error) {

@@ -482,8 +482,8 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
         const conflictCheckLabel = document.getElementById('conflictCheckLabel');
         const conflictCheckSection = document.getElementById('conflictCheckSection');
         if (conflictCheckToggle && conflictCheckLabel && conflictCheckSection) {
-            conflictCheckToggle.checked = false;
-            conflictCheckLabel.textContent = 'OFF（チェックしない）';
+            conflictCheckToggle.checked = true;
+            conflictCheckLabel.textContent = 'ON（チェックする）';
             conflictCheckSection.style.display = 'none';
         }
         

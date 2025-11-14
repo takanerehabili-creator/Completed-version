@@ -390,6 +390,19 @@ FirebaseScheduleManager.prototype.deleteEvent = async function() {
                 this.weekCache.set(weekKey, filtered);
             }
             
+            // ⭐ 削除されたIDをトラッキング（リスナーからの復活を防ぐ）
+            if (!this.deletedEventIds) {
+                this.deletedEventIds = new Set();
+            }
+            this.deletedEventIds.add(eventId);
+            
+            // 5秒後にトラッキングをクリア（リスナーが安定するまで）
+            setTimeout(() => {
+                if (this.deletedEventIds) {
+                    this.deletedEventIds.delete(eventId);
+                }
+            }, 5000);
+            
             updateSyncStatus('synced');
             this.showNotification('予定を削除しました', 'success');
             this.closeModal();
@@ -431,6 +444,19 @@ FirebaseScheduleManager.prototype.deleteSingle = async function() {
             const filtered = weekEvents.filter(e => e.id !== eventId);
             this.weekCache.set(weekKey, filtered);
         }
+        
+        // ⭐ 削除されたIDをトラッキング（リスナーからの復活を防ぐ）
+        if (!this.deletedEventIds) {
+            this.deletedEventIds = new Set();
+        }
+        this.deletedEventIds.add(eventId);
+        
+        // 5秒後にトラッキングをクリア（リスナーが安定するまで）
+        setTimeout(() => {
+            if (this.deletedEventIds) {
+                this.deletedEventIds.delete(eventId);
+            }
+        }, 5000);
         
         updateSyncStatus('synced');
         this.showNotification('この日の予定のみを削除しました', 'success');

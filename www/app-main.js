@@ -1081,6 +1081,11 @@ FirebaseScheduleManager.prototype.changeWeekOptimized = async function(direction
     // ⭐ クリーンアップは移動後に実行
     this.cleanupOldListeners();
     
+    // ⭐ 週移動の通知を表示
+    if (typeof window.showWeekChangeNotification === 'function') {
+        window.showWeekChangeNotification(this);
+    }
+    
     console.log(`Week changed successfully. Active listeners: ${this.weekListeners.size}`);
 };
 

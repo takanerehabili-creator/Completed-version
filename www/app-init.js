@@ -564,4 +564,200 @@ function closeBulkMenuUI() {
 console.log('=== Schedule Manager 完全版 (デイスケジュール対応) ===');
 console.log('✅ デイスケジュール機能追加');
 console.log('✅ 背景色表示対応');
+console.log('✅ ジェスチャー機能追加');
 console.log('Ready for production use');
+
+// ジェスチャー機能
+(function() {
+    const gestureState = {
+        touches: [],
+        longPressTimer: null,
+        isLongPress: false,
+        swipeStartX: null,
+        swipeStartTime: null,
+        isTwoFingerSwipe: false
+    };
+
+    // 画面幅の20%を端と定義
+    const getEdgeThreshold = () => window.innerWidth * 0.2;
+
+    // 左端と右端に1点ずつあるか判定（今日へ移動用）
+    function hasBothEdges(touches) {
+        if (touches.length !== 2) return false;
+        const threshold = getEdgeThreshold();
+        const leftTouch = touches.find(t => t.clientX < threshold);
+        const rightTouch = touches.find(t => t.clientX > window.innerWidth - threshold);
+        return leftTouch && rightTouch;
+    }
+
+    // タッチ開始
+    document.addEventListener('touchstart', (e) => {
+        gestureState.touches = Array.from(e.touches).map(t => ({
+            identifier: t.identifier,
+            clientX: t.clientX,
+            clientY: t.clientY
+        }));
+
+        // 2点タッチの場合
+        if (gestureState.touches.length === 2) {
+            const isBothEdges = hasBothEdges(gestureState.touches);
+            
+            // 両端2点タッチ → ロングタップ判定開始（今日へ移動）
+            if (isBothEdges) {
+                gestureState.isLongPress = false;
+                gestureState.isTwoFingerSwipe = false;
+                gestureState.longPressTimer = setTimeout(() => {
+                    gestureState.isLongPress = true;
+                    // 振動フィードバック（あれば）
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                    // 今日に移動
+                    if (window.manager) {
+                        window.manager.goToToday();
+                    } else if (typeof goToToday === 'function') {
+                        goToToday();
+                    }
+                    console.log('✅ ジェスチャー: 今日へ移動');
+                }, 800); // 800msのロングタップ
+            } else {
+                // 画面のどこでも2点タッチ → スワイプ判定用（週送り）
+                gestureState.isTwoFingerSwipe = true;
+                gestureState.isLongPress = false;
+            }
+
+            // スワイプ用の初期位置を記録（2点の中心）
+            gestureState.swipeStartX = (gestureState.touches[0].clientX + gestureState.touches[1].clientX) / 2;
+            gestureState.swipeStartTime = Date.now();
+        }
+    }, { passive: true });
+
+    // タッチ移動
+    document.addEventListener('touchmove', (e) => {
+        if (gestureState.touches.length === 2 && gestureState.swipeStartX !== null) {
+            const currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const deltaX = currentX - gestureState.swipeStartX;
+            const deltaTime = Date.now() - gestureState.swipeStartTime;
+
+            // スワイプ判定: 100px以上移動 & 500ms以内
+            if (Math.abs(deltaX) > 100 && deltaTime < 500) {
+                // ロングタップタイマーをキャンセル
+                if (gestureState.longPressTimer) {
+                    clearTimeout(gestureState.longPressTimer);
+                    gestureState.longPressTimer = null;
+                }
+
+                // 2本指スワイプの場合のみ週送り
+                if (gestureState.isTwoFingerSwipe && !gestureState.isLongPress) {
+                    // 右から左スワイプ → 次週
+                    if (deltaX < -100) {
+                        if (navigator.vibrate) navigator.vibrate(30);
+                        if (window.manager) {
+                            window.manager.changeWeekOptimized(1);
+                            // 週の差分を計算して通知
+                            setTimeout(() => {
+                                showWeekChangeNotification(window.manager);
+                            }, 300);
+                        } else if (typeof changeWeek === 'function') {
+                            changeWeek(1);
+                        }
+                        console.log('✅ ジェスチャー: 次週へ');
+                        gestureState.swipeStartX = null; // リセット
+                        gestureState.isTwoFingerSwipe = false;
+                    }
+                    // 左から右スワイプ → 前週
+                    else if (deltaX > 100) {
+                        if (navigator.vibrate) navigator.vibrate(30);
+                        if (window.manager) {
+                            window.manager.changeWeekOptimized(-1);
+                            // 週の差分を計算して通知
+                            setTimeout(() => {
+                                showWeekChangeNotification(window.manager);
+                            }, 300);
+                        } else if (typeof changeWeek === 'function') {
+                            changeWeek(-1);
+                        }
+                        console.log('✅ ジェスチャー: 前週へ');
+                        gestureState.swipeStartX = null; // リセット
+                        gestureState.isTwoFingerSwipe = false;
+                    }
+                }
+            }
+        }
+    }, { passive: true });
+
+    // タッチ終了
+    document.addEventListener('touchend', (e) => {
+        // ロングタップタイマーをクリア
+        if (gestureState.longPressTimer) {
+            clearTimeout(gestureState.longPressTimer);
+            gestureState.longPressTimer = null;
+        }
+
+        // タッチ情報をリセット
+        gestureState.touches = Array.from(e.touches).map(t => ({
+            identifier: t.identifier,
+            clientX: t.clientX,
+            clientY: t.clientY
+        }));
+
+        if (gestureState.touches.length === 0) {
+            gestureState.isLongPress = false;
+            gestureState.isTwoFingerSwipe = false;
+            gestureState.swipeStartX = null;
+            gestureState.swipeStartTime = null;
+        }
+    }, { passive: true });
+
+    // タッチキャンセル
+    document.addEventListener('touchcancel', () => {
+        if (gestureState.longPressTimer) {
+            clearTimeout(gestureState.longPressTimer);
+            gestureState.longPressTimer = null;
+        }
+        gestureState.touches = [];
+        gestureState.isLongPress = false;
+        gestureState.isTwoFingerSwipe = false;
+        gestureState.swipeStartX = null;
+        gestureState.swipeStartTime = null;
+    }, { passive: true });
+
+    console.log('✅ ジェスチャー機能を初期化しました');
+    
+    // 週移動の通知メッセージを表示
+    function showWeekChangeNotification(manager) {
+        if (!manager || !manager.currentStartDate) return;
+        
+        // 今週の月曜日を取得
+        const today = new Date();
+        const todayMonday = manager.getMondayOfWeek(today);
+        
+        // 現在表示中の週の月曜日
+        const currentMonday = new Date(manager.currentStartDate);
+        
+        // 週の差分を計算（ミリ秒 → 日 → 週）
+        const diffMs = currentMonday.getTime() - todayMonday.getTime();
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        const diffWeeks = Math.round(diffDays / 7);
+        
+        let message = '';
+        if (diffWeeks === 0) {
+            message = '今週を表示しています';
+        } else if (diffWeeks === 1) {
+            message = '来週に移動しました';
+        } else if (diffWeeks === -1) {
+            message = '先週に移動しました';
+        } else if (diffWeeks > 1) {
+            message = `${diffWeeks}週先に移動しました`;
+        } else if (diffWeeks < -1) {
+            message = `${Math.abs(diffWeeks)}週前に移動しました`;
+        }
+        
+        if (message && manager.showNotification) {
+            manager.showNotification(message, 'success');
+        }
+    }
+    
+    // グローバルに公開（ボタン操作でも使用可能に）
+    window.showWeekChangeNotification = showWeekChangeNotification;
+})();

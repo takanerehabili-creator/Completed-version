@@ -40,16 +40,33 @@ FirebaseScheduleManager.prototype.deleteEventOnly = async function(id) {
         // 親イベントを削除した場合、子イベントにrepeatPatternが保存されているので
         // 自動生成は継続される（何もしなくてOK）
         
-        // ローカルキャッシュから削除
-        this.events = this.events.filter(e => e.id !== id);
-        
-        // キャッシュをクリア
-        const weekKey = this.getWeekKey(this.currentWeekStart);
-        const weekEvents = this.weekCache.get(weekKey);
-        if (weekEvents) {
-            const filtered = weekEvents.filter(e => e.id !== id);
-            this.weekCache.set(weekKey, filtered);
+        // ローカルキャッシュから該当イベントのみ削除（子イベントは残す）
+        const eventIndex = this.events.findIndex(e => e.id === id);
+        if (eventIndex !== -1) {
+            this.events.splice(eventIndex, 1);
         }
+        
+        // 全週キャッシュから該当イベントのみ削除
+        this.weekCache.forEach((weekEvents, weekKey) => {
+            const index = weekEvents.findIndex(e => e.id === id);
+            if (index !== -1) {
+                weekEvents.splice(index, 1);
+                this.weekCache.set(weekKey, weekEvents);
+            }
+        });
+        
+        // ⭐ 削除されたIDをトラッキング（リスナーからの復活を防ぐ）
+        if (!this.deletedEventIds) {
+            this.deletedEventIds = new Set();
+        }
+        this.deletedEventIds.add(id);
+        
+        // 5秒後にトラッキングをクリア（リスナーが安定するまで）
+        setTimeout(() => {
+            if (this.deletedEventIds) {
+                this.deletedEventIds.delete(id);
+            }
+        }, 5000);
         
         // テーブル再描画
         this.renderTable();
@@ -77,39 +94,14 @@ FirebaseScheduleManager.prototype.deleteFromDateImproved = async function(id) {
     const cutoffDate = event.date;
     const parentId = event.repeatParent || id;
     
-    // 削除対象を確認
-    let previewEvents = [];
-    
-    try {
-        // repeatParentで検索（シンプルなクエリ）
-        const query1 = await db.collection('events')
-            .where('repeatParent', '==', parentId)
-            .get();
-        
-        query1.forEach(doc => {
-            const data = doc.data();
-            if (data.date >= cutoffDate) {
-                previewEvents.push({ id: doc.id, ...data });
-            }
-        });
-        
-        // 親イベント自体もチェック
-        const parentDoc = await db.collection('events').doc(parentId).get();
-        if (parentDoc.exists) {
-            const parentData = parentDoc.data();
-            if (parentData.date >= cutoffDate) {
-                const exists = previewEvents.find(e => e.id === parentDoc.id);
-                if (!exists) {
-                    previewEvents.push({ id: parentDoc.id, ...parentData });
-                }
-            }
-        }
-        
-    } catch (error) {
-        console.error('Preview error:', error);
-        this.showNotification('削除対象の確認に失敗しました', 'error');
-        return;
-    }
+    // ⭐ ローカルキャッシュから削除対象を検索（インデックス不要）
+    const previewEvents = this.events.filter(e => {
+        // 同じ親IDを持つイベント、または親イベント自身
+        const isSameGroup = (e.id === parentId || e.repeatParent === parentId);
+        // cutoffDate以降のイベント
+        const isAfterCutoff = e.date >= cutoffDate;
+        return isSameGroup && isAfterCutoff;
+    });
     
     if (previewEvents.length === 0) {
         this.showNotification('削除対象の予定が見つかりませんでした', 'info');
@@ -128,7 +120,7 @@ FirebaseScheduleManager.prototype.deleteFromDateImproved = async function(id) {
     updateSyncStatus('syncing');
     
     try {
-        // バッチ削除
+        // バッチ削除（Firestoreから直接削除）
         const deletedIds = new Set();
         
         for (let i = 0; i < previewEvents.length; i += 500) {
@@ -142,19 +134,34 @@ FirebaseScheduleManager.prototype.deleteFromDateImproved = async function(id) {
             });
             
             await batch.commit();
-            console.log(`Batch ${Math.floor(i/500) + 1} committed`);
+            console.log(`Batch ${Math.floor(i/500) + 1} committed: ${batchEvents.length} events`);
         }
         
         console.log(`✅ Deleted ${deletedIds.size} events from ${cutoffDate}`);
         
-        // ローカルキャッシュから削除
+        // ローカルキャッシュから削除（正確に削除IDのみ）
         this.events = this.events.filter(e => !deletedIds.has(e.id));
         
-        // 週キャッシュをクリア
+        // 全週キャッシュから削除
         this.weekCache.forEach((weekEvents, weekKey) => {
             const filtered = weekEvents.filter(e => !deletedIds.has(e.id));
             this.weekCache.set(weekKey, filtered);
         });
+        
+        // 削除されたIDをトラッキング（リスナーからの復活を防ぐ）
+        if (!this.deletedEventIds) {
+            this.deletedEventIds = new Set();
+        }
+        deletedIds.forEach(id => this.deletedEventIds.add(id));
+        
+        // 5秒後にトラッキングをクリア（リスナーが安定するまで）
+        setTimeout(() => {
+            deletedIds.forEach(id => {
+                if (this.deletedEventIds) {
+                    this.deletedEventIds.delete(id);
+                }
+            });
+        }, 5000);
         
         // テーブル再描画
         this.renderTable();
