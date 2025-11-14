@@ -575,19 +575,160 @@ console.log('Ready for production use');
         isLongPress: false,
         swipeStartX: null,
         swipeStartTime: null,
-        isTwoFingerSwipe: false
+        isTwoFingerSwipe: false,
+        pageFlipOverlay: null,
+        initialPinchDistance: null,
+        isPinching: false
     };
 
-    // 画面幅の20%を端と定義
-    const getEdgeThreshold = () => window.innerWidth * 0.2;
+    // ページフリップエフェクト用のオーバーレイを作成
+    function createPageFlipOverlay() {
+        if (gestureState.pageFlipOverlay) return gestureState.pageFlipOverlay;
+        
+        const overlay = document.createElement('div');
+        overlay.id = 'pageFlipOverlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            overflow: hidden;
+        `;
+        document.body.appendChild(overlay);
+        gestureState.pageFlipOverlay = overlay;
+        
+        // CSSアニメーションを追加
+        if (!document.getElementById('pageFlipStyles')) {
+            const style = document.createElement('style');
+            style.id = 'pageFlipStyles';
+            style.textContent = `
+                @keyframes pageFlipLeft {
+                    0% { 
+                        transform: perspective(1200px) rotateY(-90deg); 
+                        opacity: 0; 
+                    }
+                    50% { 
+                        transform: perspective(1200px) rotateY(-45deg); 
+                        opacity: 0.6; 
+                    }
+                    100% { 
+                        transform: perspective(1200px) rotateY(0deg); 
+                        opacity: 0; 
+                    }
+                }
+                @keyframes pageFlipRight {
+                    0% { 
+                        transform: perspective(1200px) rotateY(90deg); 
+                        opacity: 0; 
+                    }
+                    50% { 
+                        transform: perspective(1200px) rotateY(45deg); 
+                        opacity: 0.6; 
+                    }
+                    100% { 
+                        transform: perspective(1200px) rotateY(0deg); 
+                        opacity: 0; 
+                    }
+                }
+                @keyframes pinchInZoom {
+                    0% { 
+                        transform: translate(-50%, -50%) scale(1.5);
+                        opacity: 0;
+                    }
+                    50% { 
+                        transform: translate(-50%, -50%) scale(1);
+                        opacity: 1;
+                    }
+                    100% { 
+                        transform: translate(-50%, -50%) scale(0.8);
+                        opacity: 0;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        return overlay;
+    }
+    
+    // ピンチインアニメーション
+    // 中央バッジ通知を表示（汎用関数）
+    function showBadgeNotification(message) {
+        const overlay = createPageFlipOverlay();
+        
+        const feedback = document.createElement('div');
+        feedback.textContent = message;
+        feedback.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(1.5);
+            background: rgba(33, 150, 243, 0.95);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: bold;
+            z-index: 10000;
+            animation: pinchInZoom 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            box-shadow: 0 8px 32px rgba(33, 150, 243, 0.4);
+            white-space: nowrap;
+        `;
+        
+        overlay.appendChild(feedback);
+        
+        setTimeout(() => {
+            feedback.remove();
+        }, 800);
+    }
+    
+    // ピンチインアニメーション（バッジ通知を使用）
+    function showPinchInAnimation() {
+        showBadgeNotification('今日へ移動');
+    }
+    
+    // 2点間の距離を計算
+    function getDistance(touch1, touch2) {
+        const dx = touch1.clientX - touch2.clientX;
+        const dy = touch1.clientY - touch2.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
 
-    // 左端と右端に1点ずつあるか判定（今日へ移動用）
-    function hasBothEdges(touches) {
-        if (touches.length !== 2) return false;
-        const threshold = getEdgeThreshold();
-        const leftTouch = touches.find(t => t.clientX < threshold);
-        const rightTouch = touches.find(t => t.clientX > window.innerWidth - threshold);
-        return leftTouch && rightTouch;
+    // ページめくりアニメーション
+    function showPageFlipAnimation(direction) {
+        const overlay = createPageFlipOverlay();
+        
+        // アニメーション要素を作成
+        const flipElement = document.createElement('div');
+        const isLeft = direction === 'left';
+        
+        flipElement.style.cssText = `
+            position: absolute;
+            top: 0;
+            ${isLeft ? 'left: 0;' : 'right: 0;'}
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(
+                ${isLeft ? 'to right' : 'to left'},
+                rgba(33, 150, 243, 0.15) 0%,
+                rgba(33, 150, 243, 0.05) 50%,
+                rgba(0, 0, 0, 0) 100%
+            );
+            transform-origin: ${isLeft ? 'right' : 'left'} center;
+            transform: ${isLeft ? 'perspective(1200px) rotateY(-90deg)' : 'perspective(1200px) rotateY(90deg)'};
+            animation: pageFlip${isLeft ? 'Left' : 'Right'} 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            box-shadow: ${isLeft ? '5px' : '-5px'} 0 20px rgba(0,0,0,0.2);
+        `;
+        
+        overlay.appendChild(flipElement);
+        
+        // アニメーション終了後に要素を削除
+        setTimeout(() => {
+            flipElement.remove();
+        }, 500);
     }
 
     // タッチ開始
@@ -600,67 +741,100 @@ console.log('Ready for production use');
 
         // 2点タッチの場合
         if (gestureState.touches.length === 2) {
-            const isBothEdges = hasBothEdges(gestureState.touches);
-            
-            // 両端2点タッチ → ロングタップ判定開始（今日へ移動）
-            if (isBothEdges) {
-                gestureState.isLongPress = false;
-                gestureState.isTwoFingerSwipe = false;
-                gestureState.longPressTimer = setTimeout(() => {
-                    gestureState.isLongPress = true;
-                    // 振動フィードバック（あれば）
-                    if (navigator.vibrate) {
-                        navigator.vibrate(50);
-                    }
-                    // 今日に移動
-                    if (window.manager) {
-                        window.manager.goToToday();
-                    } else if (typeof goToToday === 'function') {
-                        goToToday();
-                    }
-                    console.log('✅ ジェスチャー: 今日へ移動');
-                }, 800); // 800msのロングタップ
-            } else {
-                // 画面のどこでも2点タッチ → スワイプ判定用（週送り）
-                gestureState.isTwoFingerSwipe = true;
-                gestureState.isLongPress = false;
-            }
+            // ピンチジェスチャー用の初期距離を記録
+            gestureState.initialPinchDistance = getDistance(
+                { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY },
+                { clientX: e.touches[1].clientX, clientY: e.touches[1].clientY }
+            );
+            gestureState.isPinching = false;
+            gestureState.isTwoFingerSwipe = false;
+            gestureState.isLongPress = false;
 
             // スワイプ用の初期位置を記録（2点の中心）
             gestureState.swipeStartX = (gestureState.touches[0].clientX + gestureState.touches[1].clientX) / 2;
             gestureState.swipeStartTime = Date.now();
+            
+            // ⭐ 2本指タッチ時にスクロールを防止
+            e.preventDefault();
         }
-    }, { passive: true });
+    }, { passive: false }); // ⭐ passiveをfalseに変更してpreventDefaultを有効化
 
     // タッチ移動
     document.addEventListener('touchmove', (e) => {
-        if (gestureState.touches.length === 2 && gestureState.swipeStartX !== null) {
-            const currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-            const deltaX = currentX - gestureState.swipeStartX;
-            const deltaTime = Date.now() - gestureState.swipeStartTime;
-
-            // スワイプ判定: 100px以上移動 & 500ms以内
-            if (Math.abs(deltaX) > 100 && deltaTime < 500) {
-                // ロングタップタイマーをキャンセル
-                if (gestureState.longPressTimer) {
-                    clearTimeout(gestureState.longPressTimer);
-                    gestureState.longPressTimer = null;
+        // ⭐ 2本指タッチ中はスクロールを防止
+        if (gestureState.touches.length === 2) {
+            e.preventDefault();
+        }
+        
+        if (gestureState.touches.length === 2 && e.touches.length === 2) {
+            // 現在の2点間の距離を計算
+            const currentDistance = getDistance(
+                { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY },
+                { clientX: e.touches[1].clientX, clientY: e.touches[1].clientY }
+            );
+            
+            // ⭐ ピンチイン判定（指を近づける = 今日へ移動）
+            if (gestureState.initialPinchDistance && !gestureState.isPinching) {
+                const pinchRatio = currentDistance / gestureState.initialPinchDistance;
+                
+                // 初期距離の60%以下に近づいたらピンチインと判定
+                if (pinchRatio < 0.6) {
+                    gestureState.isPinching = true;
+                    
+                    // 振動フィードバック
+                    if (navigator.vibrate) {
+                        navigator.vibrate([30, 20, 30]);
+                    }
+                    
+                    // 今日に移動
+                    showPinchInAnimation();
+                    setTimeout(() => {
+                        if (window.manager) {
+                            window.manager.goToToday();
+                        } else if (typeof goToToday === 'function') {
+                            goToToday();
+                        }
+                    }, 100);
+                    
+                    console.log('✅ ジェスチャー: ピンチインで今日へ移動');
+                    
+                    // ジェスチャーをリセット
+                    gestureState.initialPinchDistance = null;
+                    gestureState.swipeStartX = null;
+                    return;
                 }
+            }
+            
+            // ⭐ スワイプ判定（ピンチインが検知されていない場合のみ）
+            if (gestureState.swipeStartX !== null && !gestureState.isPinching) {
+                const currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const deltaX = currentX - gestureState.swipeStartX;
+                const deltaTime = Date.now() - gestureState.swipeStartTime;
 
-                // 2本指スワイプの場合のみ週送り
-                if (gestureState.isTwoFingerSwipe && !gestureState.isLongPress) {
+                // スワイプ判定: 100px以上移動 & 500ms以内
+                if (Math.abs(deltaX) > 100 && deltaTime < 500) {
+                    // ロングタップタイマーをキャンセル
+                    if (gestureState.longPressTimer) {
+                        clearTimeout(gestureState.longPressTimer);
+                        gestureState.longPressTimer = null;
+                    }
+
                     // 右から左スワイプ → 次週
                     if (deltaX < -100) {
                         if (navigator.vibrate) navigator.vibrate(30);
-                        if (window.manager) {
-                            window.manager.changeWeekOptimized(1);
-                            // 週の差分を計算して通知
-                            setTimeout(() => {
-                                showWeekChangeNotification(window.manager);
-                            }, 300);
-                        } else if (typeof changeWeek === 'function') {
-                            changeWeek(1);
-                        }
+                        // ⭐ ページめくりアニメーションを表示
+                        showPageFlipAnimation('right');
+                        setTimeout(() => {
+                            if (window.manager) {
+                                window.manager.changeWeekOptimized(1);
+                                // 週の差分を計算して通知
+                                setTimeout(() => {
+                                    showWeekChangeNotification(window.manager);
+                                }, 300);
+                            } else if (typeof changeWeek === 'function') {
+                                changeWeek(1);
+                            }
+                        }, 50);
                         console.log('✅ ジェスチャー: 次週へ');
                         gestureState.swipeStartX = null; // リセット
                         gestureState.isTwoFingerSwipe = false;
@@ -668,15 +842,19 @@ console.log('Ready for production use');
                     // 左から右スワイプ → 前週
                     else if (deltaX > 100) {
                         if (navigator.vibrate) navigator.vibrate(30);
-                        if (window.manager) {
-                            window.manager.changeWeekOptimized(-1);
-                            // 週の差分を計算して通知
-                            setTimeout(() => {
-                                showWeekChangeNotification(window.manager);
-                            }, 300);
-                        } else if (typeof changeWeek === 'function') {
-                            changeWeek(-1);
-                        }
+                        // ⭐ ページめくりアニメーションを表示
+                        showPageFlipAnimation('left');
+                        setTimeout(() => {
+                            if (window.manager) {
+                                window.manager.changeWeekOptimized(-1);
+                                // 週の差分を計算して通知
+                                setTimeout(() => {
+                                    showWeekChangeNotification(window.manager);
+                                }, 300);
+                            } else if (typeof changeWeek === 'function') {
+                                changeWeek(-1);
+                            }
+                        }, 50);
                         console.log('✅ ジェスチャー: 前週へ');
                         gestureState.swipeStartX = null; // リセット
                         gestureState.isTwoFingerSwipe = false;
@@ -684,7 +862,7 @@ console.log('Ready for production use');
                 }
             }
         }
-    }, { passive: true });
+    }, { passive: false }); // ⭐ passiveをfalseに変更してpreventDefaultを有効化
 
     // タッチ終了
     document.addEventListener('touchend', (e) => {
@@ -706,6 +884,8 @@ console.log('Ready for production use');
             gestureState.isTwoFingerSwipe = false;
             gestureState.swipeStartX = null;
             gestureState.swipeStartTime = null;
+            gestureState.initialPinchDistance = null;
+            gestureState.isPinching = false;
         }
     }, { passive: true });
 
@@ -720,11 +900,13 @@ console.log('Ready for production use');
         gestureState.isTwoFingerSwipe = false;
         gestureState.swipeStartX = null;
         gestureState.swipeStartTime = null;
+        gestureState.initialPinchDistance = null;
+        gestureState.isPinching = false;
     }, { passive: true });
 
     console.log('✅ ジェスチャー機能を初期化しました');
     
-    // 週移動の通知メッセージを表示
+    // 週移動の通知メッセージを表示（バッジ形式）
     function showWeekChangeNotification(manager) {
         if (!manager || !manager.currentStartDate) return;
         
@@ -753,8 +935,9 @@ console.log('Ready for production use');
             message = `${Math.abs(diffWeeks)}週前に移動しました`;
         }
         
-        if (message && manager.showNotification) {
-            manager.showNotification(message, 'success');
+        // ⭐ 中央バッジで表示（右上の通知から変更）
+        if (message) {
+            showBadgeNotification(message);
         }
     }
     
