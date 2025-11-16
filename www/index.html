@@ -187,6 +187,10 @@
                     <button class="action-btn" onclick="openOldRepeatCheckModal()" style="width:100%;padding:15px;font-size:16px;background:#ff9800;color:white">
                         🔍 古い繰返し予定をチェック
                     </button>
+                    <!-- ⭐ 重複予定チェック機能 -->
+                    <button class="action-btn" onclick="findDuplicatesFromCache()" style="width:100%;padding:15px;font-size:16px;background:#f44336;color:white">
+                        ⚠️ 重複予定をチェック
+                    </button>
                 </div>
             </div>
             
@@ -656,6 +660,7 @@
     <script src="holiday-fetch.js"></script>
     <script src="management-modals.js"></script>
     <script src="old-repeat-check.js"></script><!-- ⭐ 古い繰り返し予定チェック機能 -->
+    <script src="duplicate-detection-optimized.js"></script><!-- ⭐ 重複予定チェック機能（読み取り0回） -->
     <script src="backup-restore.js"></script><!-- ⭐ バックアップ＆復元機能 -->
     
    <!-- スタッフセレクトボックス動的更新用スクリプト -->

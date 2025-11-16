@@ -605,32 +605,14 @@ console.log('Ready for production use');
             const style = document.createElement('style');
             style.id = 'pageFlipStyles';
             style.textContent = `
-                @keyframes pageFlipLeft {
+                @keyframes zoomIn {
                     0% { 
-                        transform: perspective(1200px) rotateY(-90deg); 
-                        opacity: 0; 
-                    }
-                    50% { 
-                        transform: perspective(1200px) rotateY(-45deg); 
-                        opacity: 0.6; 
+                        transform: scale(0.85);
+                        opacity: 0;
                     }
                     100% { 
-                        transform: perspective(1200px) rotateY(0deg); 
-                        opacity: 0; 
-                    }
-                }
-                @keyframes pageFlipRight {
-                    0% { 
-                        transform: perspective(1200px) rotateY(90deg); 
-                        opacity: 0; 
-                    }
-                    50% { 
-                        transform: perspective(1200px) rotateY(45deg); 
-                        opacity: 0.6; 
-                    }
-                    100% { 
-                        transform: perspective(1200px) rotateY(0deg); 
-                        opacity: 0; 
+                        transform: scale(1);
+                        opacity: 1;
                     }
                 }
                 @keyframes pinchInZoom {
@@ -697,38 +679,24 @@ console.log('Ready for production use');
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // ページめくりアニメーション
+    // ズームフェードアニメーション
     function showPageFlipAnimation(direction) {
-        const overlay = createPageFlipOverlay();
+        const tableContainer = document.getElementById('tableContainer');
+        if (!tableContainer) return;
         
-        // アニメーション要素を作成
-        const flipElement = document.createElement('div');
-        const isLeft = direction === 'left';
+        // 一旦古いアニメーションをクリア
+        tableContainer.style.animation = 'none';
         
-        flipElement.style.cssText = `
-            position: absolute;
-            top: 0;
-            ${isLeft ? 'left: 0;' : 'right: 0;'}
-            width: 50%;
-            height: 100%;
-            background: linear-gradient(
-                ${isLeft ? 'to right' : 'to left'},
-                rgba(33, 150, 243, 0.15) 0%,
-                rgba(33, 150, 243, 0.05) 50%,
-                rgba(0, 0, 0, 0) 100%
-            );
-            transform-origin: ${isLeft ? 'right' : 'left'} center;
-            transform: ${isLeft ? 'perspective(1200px) rotateY(-90deg)' : 'perspective(1200px) rotateY(90deg)'};
-            animation: pageFlip${isLeft ? 'Left' : 'Right'} 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-            box-shadow: ${isLeft ? '5px' : '-5px'} 0 20px rgba(0,0,0,0.2);
-        `;
-        
-        overlay.appendChild(flipElement);
-        
-        // アニメーション終了後に要素を削除
+        // 少し待ってからアニメーション適用（リフロー用）
         setTimeout(() => {
-            flipElement.remove();
-        }, 500);
+            // 方向に関わらず、ズームインアニメーション
+            tableContainer.style.animation = 'zoomIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)';
+            
+            // アニメーション終了後にスタイルをクリア
+            setTimeout(() => {
+                tableContainer.style.animation = '';
+            }, 350);
+        }, 10);
     }
 
     // タッチ開始
