@@ -8,7 +8,18 @@ FirebaseScheduleManager.prototype.exportExcel = async function() {
         this.teamMembers.forEach(staff => {
             const memberName = `${staff.surname || ''}${staff.firstname || ''}`;
             const data = this.generateStaffExcelData(staff);
-            const ws = XLSX.utils.aoa_to_sheet(data);
+            // ⭐ cellDates: true オプションでDateオブジェクトを正しく処理
+            const ws = XLSX.utils.aoa_to_sheet(data, { cellDates: true });
+            
+            // ⭐ 日付セルに日付フォーマットを適用
+            for (let i = 0; i < 6; i++) {
+                const col = i * 5; // A列, F列, K列, P列, U列, Z列
+                const cellAddress = XLSX.utils.encode_cell({r: 0, c: col}); // A1, F1, K1...
+                if (ws[cellAddress] && ws[cellAddress].v) {
+                    ws[cellAddress].t = 'd'; // セルタイプを日付に
+                    ws[cellAddress].z = 'yyyy/m/d'; // 日付フォーマット
+                }
+            }
             
             const colWidths = [];
             for (let i = 0; i < 6; i++) {
@@ -178,9 +189,10 @@ FirebaseScheduleManager.prototype.generateStaffExcelData = function(staff) {
         const isHol = this.isHoliday(this.formatDate(date));
         const holidayName = this.getHolidayName(this.formatDate(date));
         
-        const dateText = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+        // ⭐ タイムゾーンの影響を受けないように、年月日を直接指定してDateオブジェクトを作成
+        const excelDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         
-        headerRow1.push(dateText, '', '', '', '');
+        headerRow1.push(excelDate, '', '', '', '');
         headerRow2.push('名前', '開始時間', '終了時間', '単位', '種類');
     }
     

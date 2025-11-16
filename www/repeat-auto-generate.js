@@ -129,6 +129,67 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
     console.log(`=== 範囲イベント生成完了 ===`);
 };
 
+// ⭐ スマート時刻判定: 多数決 + 連続変更検知
+function determineOptimalTime(events) {
+    if (!events || events.length === 0) {
+        return null;
+    }
+    
+    // 日付順にソート（古い→新しい）
+    const sortedEvents = events
+        .filter(e => e.time) // timeがあるものだけ
+        .sort((a, b) => a.date.localeCompare(b.date));
+    
+    if (sortedEvents.length === 0) {
+        return null;
+    }
+    
+    console.log('=== Smart Time Detection ===');
+    console.log(`Total events: ${sortedEvents.length}`);
+    
+    // 1️⃣ 連続変更検知（直近3件）
+    const recentThree = sortedEvents.slice(-3);
+    if (recentThree.length === 3) {
+        const times = recentThree.map(e => e.time);
+        const allSame = times.every(t => t === times[0]);
+        
+        if (allSame) {
+            console.log(`✅ Consecutive change detected: ${times[0]} (last 3 events)`);
+            console.log('→ Using this time (operational change detected)');
+            return times[0];
+        } else {
+            console.log(`Recent 3 times: ${times.join(', ')} (not consistent)`);
+        }
+    }
+    
+    // 2️⃣ 多数決（直近10件）
+    const recentTen = sortedEvents.slice(-10);
+    const timeFrequency = {};
+    
+    recentTen.forEach(event => {
+        const time = event.time;
+        timeFrequency[time] = (timeFrequency[time] || 0) + 1;
+    });
+    
+    console.log('Time frequency (last 10 events):', timeFrequency);
+    
+    // 最頻値を取得
+    let mostCommonTime = null;
+    let maxCount = 0;
+    
+    for (const [time, count] of Object.entries(timeFrequency)) {
+        if (count > maxCount) {
+            maxCount = count;
+            mostCommonTime = time;
+        }
+    }
+    
+    console.log(`✅ Most common time: ${mostCommonTime} (${maxCount}/${recentTen.length} occurrences)`);
+    console.log('→ Using majority vote result');
+    
+    return mostCommonTime;
+}
+
 // ⭐ 今週の月曜日の日付を取得
 function getThisMonday() {
     const today = new Date();
@@ -236,13 +297,19 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
                     continue;
                 }
                 
+                // ⭐ スマート時刻判定を実行
+                const optimalTime = determineOptimalTime(group.events);
+                const timeToUse = optimalTime || group.latestEvent.time;
+                
+                console.log(`Determined time to use: ${timeToUse}`);
+                
                 // 最新の日付から6ヶ月分追加生成
                 const baseEvent = {
                     member: group.latestEvent.member,
                     surname: group.latestEvent.surname,
                     firstname: group.latestEvent.firstname,
                     displayName: group.latestEvent.displayName,
-                    time: group.latestEvent.time,
+                    time: timeToUse,  // ⭐ スマート判定結果を使用
                     startTime: group.latestEvent.startTime,
                     endTime: group.latestEvent.endTime,
                     type: group.latestEvent.type,
