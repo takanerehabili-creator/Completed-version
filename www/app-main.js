@@ -1250,32 +1250,6 @@ FirebaseScheduleManager.prototype.setupEvents = function() {
         });
     }
     
-    // ⭐ 衝突チェックトグルのイベントリスナー
-    const conflictCheckToggle = document.getElementById('conflictCheckToggle');
-    const conflictCheckLabel = document.getElementById('conflictCheckLabel');
-    if (conflictCheckToggle && conflictCheckLabel) {
-        conflictCheckToggle.addEventListener('change', () => {
-            if (conflictCheckToggle.checked) {
-                conflictCheckLabel.textContent = 'ON（チェックする）';
-            } else {
-                conflictCheckLabel.textContent = 'OFF（チェックしない）';
-            }
-        });
-    }
-    
-    // ⭐ 繰り返し選択のイベントリスナー
-    const repeatSelect = document.getElementById('repeatSelect');
-    const conflictCheckSection = document.getElementById('conflictCheckSection');
-    if (repeatSelect && conflictCheckSection) {
-        repeatSelect.addEventListener('change', () => {
-            if (repeatSelect.value !== 'none') {
-                conflictCheckSection.style.display = 'block';
-            } else {
-                conflictCheckSection.style.display = 'none';
-            }
-        });
-    }
-    
     document.addEventListener('dragstart', e => this.handleDragStart(e));
     document.addEventListener('dragend', e => this.handleDragEnd(e));
     document.addEventListener('dragover', e => this.handleDragOver(e));

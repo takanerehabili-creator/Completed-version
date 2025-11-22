@@ -428,6 +428,8 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
         document.getElementById('surnameInput').value = existingEvent.surname || '';
         document.getElementById('firstnameInput').value = existingEvent.firstname || '';
         
+        // ⭐ 編集モーダルでは繰り返しセクションを非表示
+        document.getElementById('repeatSection').style.display = 'none';
         document.getElementById('repeatSelect').value = existingEvent.repeat || 'none';
         document.querySelectorAll('.type-option').forEach(o => {
             o.classList.remove('selected');
@@ -443,17 +445,6 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
         } else {
             newPatientToggle.checked = false;
             newPatientLabel.textContent = '既存患者';
-        }
-        
-        // ⭐ 衝突チェックセクションの表示制御
-        const conflictCheckSection = document.getElementById('conflictCheckSection');
-        if (conflictCheckSection) {
-            const repeatValue = existingEvent.repeat || 'none';
-            if (repeatValue !== 'none') {
-                conflictCheckSection.style.display = 'block';
-            } else {
-                conflictCheckSection.style.display = 'none';
-            }
         }
         
         this.toggleInputs(existingEvent.type);
@@ -477,16 +468,8 @@ FirebaseScheduleManager.prototype.openModal = function(member, date, time, exist
         newPatientToggle.checked = false;
         newPatientLabel.textContent = '既存患者';
         
-        // ⭐ 衝突チェックトグルをリセット
-        const conflictCheckToggle = document.getElementById('conflictCheckToggle');
-        const conflictCheckLabel = document.getElementById('conflictCheckLabel');
-        const conflictCheckSection = document.getElementById('conflictCheckSection');
-        if (conflictCheckToggle && conflictCheckLabel && conflictCheckSection) {
-            conflictCheckToggle.checked = true;
-            conflictCheckLabel.textContent = 'ON（チェックする）';
-            conflictCheckSection.style.display = 'none';
-        }
-        
+        // ⭐ 追加モーダルでは繰り返しセクションを表示
+        document.getElementById('repeatSection').style.display = 'block';
         document.getElementById('repeatSelect').value = 'none';
         document.querySelectorAll('.type-option').forEach(o => o.classList.remove('selected'));
         document.getElementById('surnameSection').classList.remove('hidden');

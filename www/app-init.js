@@ -912,3 +912,31 @@ console.log('Ready for production use');
     // グローバルに公開（ボタン操作でも使用可能に）
     window.showWeekChangeNotification = showWeekChangeNotification;
 })();
+
+// ===== 繰り返し予定保存用のオーバーレイ表示 =====
+
+// オーバーレイを表示
+function showRepeatSaveOverlay(message = '保存中...') {
+    const overlay = document.getElementById('repeatSaveOverlay');
+    const text = document.getElementById('repeatSaveText');
+    if (overlay && text) {
+        text.textContent = message;
+        overlay.classList.add('show');
+        // スクロールを無効化
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+// オーバーレイを非表示
+function hideRepeatSaveOverlay() {
+    const overlay = document.getElementById('repeatSaveOverlay');
+    if (overlay) {
+        overlay.classList.remove('show');
+        // スクロールを再度有効化
+        document.body.style.overflow = '';
+    }
+}
+
+// グローバルに公開
+window.showRepeatSaveOverlay = showRepeatSaveOverlay;
+window.hideRepeatSaveOverlay = hideRepeatSaveOverlay;

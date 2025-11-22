@@ -1,14 +1,34 @@
 // イベント保存・削除機能(FirebaseScheduleManagerクラスに追加するメソッド)
 
 FirebaseScheduleManager.prototype.saveEvent = async function() {
+    // ⭐ ローディング状態を開始
+    const saveBtn = document.getElementById('saveEventBtn');
+    if (saveBtn) {
+        saveBtn.classList.add('loading');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner"></span>保存中...';
+    }
+    
     if (!this.selectedType) {
         this.showNotification('予定種類を選択してください', 'error');
+        // ⭐ ローディング状態を解除
+        if (saveBtn) {
+            saveBtn.classList.remove('loading');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+        }
         return;
     }
 
     const {member, date, time} = this.clickedCell;
     if (this.isHoliday(date)) {
         this.showNotification('祝日には予定を追加できません', 'error');
+        // ⭐ ローディング状態を解除
+        if (saveBtn) {
+            saveBtn.classList.remove('loading');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+        }
         return;
     }
     
@@ -16,6 +36,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
     const hasStaffLeave = this.isStaffLeave(member, date, time);
     if (hasStaffLeave) {
         this.showNotification("この時間枠は休み設定されており、予定を追加できません", "error");
+        // ⭐ ローディング状態を解除
+        if (saveBtn) {
+            saveBtn.classList.remove('loading');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+        }
         return;
     }
 
@@ -28,6 +54,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         
         if (!startTime || !endTime) {
             this.showNotification('開始時刻と終了時刻を選択してください', 'error');
+            // ⭐ ローディング状態を解除
+            if (saveBtn) {
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存';
+            }
             return;
         }
         
@@ -39,6 +71,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         
         if (startIdx >= endIdx) {
             this.showNotification('終了時刻は開始時刻より後を選択してください', 'error');
+            // ⭐ ローディング状態を解除
+            if (saveBtn) {
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存';
+            }
             return;
         }
         
@@ -55,6 +93,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             const surnameInput = document.getElementById('surnameInput');
             if (surnameInput) {
                 surnameInput.focus();
+            }
+            // ⭐ ローディング状態を解除
+            if (saveBtn) {
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存';
             }
             return;
         }
@@ -84,6 +128,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             if (!userChoice) {
                 this.closeModal();
                 this.showNotification('編集をキャンセルしました', 'info');
+                // ⭐ ローディング状態を解除
+                if (saveBtn) {
+                    saveBtn.classList.remove('loading');
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存';
+                }
                 return;
             }
         }
@@ -97,6 +147,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             if (conflict) {
                 this.showNotification('その時間範囲には既にデイ/担会があります', 'error');
                 updateSyncStatus('synced');
+                // ⭐ ローディング状態を解除
+                if (saveBtn) {
+                    saveBtn.classList.remove('loading');
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存';
+                }
                 return;
             }
             
@@ -174,57 +230,118 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                 await this.saveEventToFirestore(eventData);
                 
                 if (oldRepeat === 'none' && newRepeat !== 'none') {
+                    // ⭐ 繰り返し予定保存用のオーバーレイを表示
+                    showRepeatSaveOverlay('6ヶ月分の繰り返し予定を生成中...');
+                    
                     this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
                     await this.generateRepeatingInFirestore(eventData, eventData.id, date);
                     this.showNotification('予定を更新し、繰り返しイベントを生成しました（6ヶ月分）', 'success');
+                    
+                    // ⭐ オーバーレイを非表示
+                    hideRepeatSaveOverlay();
                 } else if (oldRepeat !== 'none' && newRepeat === 'none') {
+                    // ⭐ オーバーレイを表示
+                    showRepeatSaveOverlay('繰り返しイベントを削除中...');
+                    
                     await this.deleteRelatedRepeatingEvents(eventData.id, date);
                     this.showNotification('予定を更新し、繰り返しイベントを削除しました', 'success');
+                    
+                    // ⭐ オーバーレイを非表示
+                    hideRepeatSaveOverlay();
                 } else {
                     this.showNotification('予定を更新しました', 'success');
                 }
             } else {
                 const newId = await this.saveEventToFirestore(eventData);
                 if (repeat !== 'none') {
-                    // ⭐ 衝突チェックトグルの状態を確認
-                    const conflictCheckToggle = document.getElementById('conflictCheckToggle');
-                    const shouldCheckConflict = conflictCheckToggle && conflictCheckToggle.checked;
+                    // ⭐ 繰り返し予定保存用のオーバーレイを表示
+                    showRepeatSaveOverlay('繰り返し予定を確認中...');
                     
-                    if (shouldCheckConflict) {
-                        // ⭐ 衝突チェックON: 従来の処理
-                        this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
+                    // 繰り返し予定には常に衝突チェックを実行
+                    this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
+                    
+                    const conflicts = await this.checkRepeatConflicts(eventData, newId, date);
+                    if (conflicts && conflicts.length > 0) {
+                        // ⭐ オーバーレイを非表示にして衝突モーダルを表示
+                        hideRepeatSaveOverlay();
                         
-                        const conflicts = await this.checkRepeatConflicts(eventData, newId, date);
-                        if (conflicts && conflicts.length > 0) {
-                            this.showConflictModal(conflicts, async (action) => {
-                                if (action === 'replace') {
-                                    this.showNotification('繰り返し予定を生成中...（既存を置き換え）', 'info');
-                                    for (const c of conflicts) await db.collection('events').doc(c.id).delete();
-                                    await this.generateRepeatingInFirestore(eventData, newId, date);
-                                    this.showNotification('繰り返し予定を作成しました（既存を置き換え）', 'success');
-                                    this.closeModal();
-                                    location.reload();
-                                } else if (action === 'skip') {
-                                    this.showNotification('繰り返し予定を生成中...（衝突日をスキップ）', 'info');
-                                    await this.generateRepeatingWithSkip(eventData, newId, date, conflicts);
-                                    this.showNotification('繰り返し予定を作成しました（衝突日をスキップ）', 'success');
-                                    this.closeModal();
-                                    location.reload();
-                                } else {
-                                    await db.collection('events').doc(newId).delete();
-                                    this.showNotification('繰り返し設定をキャンセルしました', 'info');
-                                }
-                            });
-                            return;
+                        // ⭐ 衝突チェック中の表示を更新
+                        if (saveBtn) {
+                            saveBtn.innerHTML = '<span class="spinner"></span>衝突を検出しました';
                         }
-                        await this.generateRepeatingInFirestore(eventData, newId, date);
-                        this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
-                    } else {
-                        // ⭐ 衝突チェックOFF: 衝突チェックなしで直接生成
-                        this.showNotification('繰り返し予定を生成中...（6ヶ月分）', 'info');
-                        await this.generateRepeatingInFirestore(eventData, newId, date);
-                        this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
+                        this.showConflictModal(conflicts, async (action) => {
+                            if (action === 'replace') {
+                                // ⭐ オーバーレイを再表示
+                                showRepeatSaveOverlay('既存の予定を置き換え中...');
+                                
+                                // ⭐ 置き換え処理中の表示
+                                if (saveBtn) {
+                                    saveBtn.innerHTML = '<span class="spinner"></span>置き換え中...';
+                                }
+                                this.showNotification('繰り返し予定を生成中...（既存を置き換え）', 'info');
+                                for (const c of conflicts) await db.collection('events').doc(c.id).delete();
+                                await this.generateRepeatingInFirestore(eventData, newId, date);
+                                this.showNotification('繰り返し予定を作成しました（既存を置き換え）', 'success');
+                                
+                                // ⭐ オーバーレイを非表示
+                                hideRepeatSaveOverlay();
+                                
+                                // ⭐ ローディング状態を解除
+                                if (saveBtn) {
+                                    saveBtn.classList.remove('loading');
+                                    saveBtn.disabled = false;
+                                    saveBtn.textContent = '保存';
+                                }
+                                this.closeModal();
+                                location.reload();
+                            } else if (action === 'skip') {
+                                // ⭐ オーバーレイを再表示
+                                showRepeatSaveOverlay('衝突日をスキップして保存中...');
+                                
+                                // ⭐ スキップ処理中の表示
+                                if (saveBtn) {
+                                    saveBtn.innerHTML = '<span class="spinner"></span>スキップ中...';
+                                }
+                                this.showNotification('繰り返し予定を生成中...（衝突日をスキップ）', 'info');
+                                await this.generateRepeatingWithSkip(eventData, newId, date, conflicts);
+                                this.showNotification('繰り返し予定を作成しました（衝突日をスキップ）', 'success');
+                                
+                                // ⭐ オーバーレイを非表示
+                                hideRepeatSaveOverlay();
+                                
+                                // ⭐ ローディング状態を解除
+                                if (saveBtn) {
+                                    saveBtn.classList.remove('loading');
+                                    saveBtn.disabled = false;
+                                    saveBtn.textContent = '保存';
+                                }
+                                this.closeModal();
+                                location.reload();
+                            } else {
+                                // ⭐ キャンセル時にもオーバーレイを非表示
+                                hideRepeatSaveOverlay();
+                                
+                                await db.collection('events').doc(newId).delete();
+                                this.showNotification('繰り返し設定をキャンセルしました', 'info');
+                                // ⭐ ローディング状態を解除
+                                if (saveBtn) {
+                                    saveBtn.classList.remove('loading');
+                                    saveBtn.disabled = false;
+                                    saveBtn.textContent = '保存';
+                                }
+                            }
+                        });
+                        return;
                     }
+                    
+                    // ⭐ オーバーレイのメッセージを更新
+                    showRepeatSaveOverlay('6ヶ月分の繰り返し予定を生成中...');
+                    
+                    await this.generateRepeatingInFirestore(eventData, newId, date);
+                    this.showNotification('繰り返し予定を作成しました（6ヶ月分）', 'success');
+                    
+                    // ⭐ オーバーレイを非表示
+                    hideRepeatSaveOverlay();
                 } else {
                     this.showNotification('予定を追加しました', 'success');
                 }
@@ -232,13 +349,32 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         }
         
         updateSyncStatus('synced');
+        // ⭐ ローディング状態を解除
+        if (saveBtn) {
+            saveBtn.classList.remove('loading');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+        }
         
     } catch (error) {
         this.showNotification('予定の保存に失敗しました', 'error');
         updateSyncStatus('error');
         console.error('Save event error:', error);
+        
+        // ⭐ エラー時にオーバーレイを非表示
+        hideRepeatSaveOverlay();
+        
+        // ⭐ エラー時もローディング状態を解除
+        if (saveBtn) {
+            saveBtn.classList.remove('loading');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+        }
     }
 
+    // ⭐ モーダルクローズ時にもオーバーレイを確実に非表示
+    hideRepeatSaveOverlay();
+    
     this.closeModal();
 };
 

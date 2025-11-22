@@ -20,6 +20,14 @@
     <div class="loading-indicator" id="loadingIndicator">データ読み込み中...</div>
     <div class="read-counter" id="readCounter">📊 読み取り: 0回</div>
     
+    <!-- 繰り返し予定保存用のオーバーレイ -->
+    <div class="repeat-save-overlay" id="repeatSaveOverlay">
+        <div class="repeat-save-spinner-container">
+            <div class="repeat-save-spinner"></div>
+            <div class="repeat-save-text" id="repeatSaveText">保存中...</div>
+        </div>
+    </div>
+    
     <div class="app">
         <header class="header">
             <div class="nav">
@@ -182,10 +190,6 @@
                     </button>
                     <button class="action-btn primary" onclick="openHolidayManagement()" style="width:100%;padding:15px;font-size:16px">
                         🎌 祝日管理を開く
-                    </button>
-                    <!-- ⭐ 古い繰り返し予定チェック機能 -->
-                    <button class="action-btn" onclick="openOldRepeatCheckModal()" style="width:100%;padding:15px;font-size:16px;background:#ff9800;color:white">
-                        🔍 古い繰返し予定をチェック
                     </button>
                     <!-- ⭐ 重複予定チェック機能 -->
                     <button class="action-btn" onclick="findDuplicatesFromCache()" style="width:100%;padding:15px;font-size:16px;background:#f44336;color:white">
@@ -584,23 +588,13 @@
                     <option value="biweekly2">隔週(2週間おき)</option>
                 </select>
             </div>
-            <div class="form-section" id="conflictCheckSection" style="display:none">
-                <label class="form-label">衝突チェック:</label>
-                <div style="display:flex;align-items:center;gap:10px">
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="conflictCheckToggle" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                    <span id="conflictCheckLabel" style="font-size:14px;color:#666">ON（チェックする）</span>
-                </div>
-                <p style="font-size:12px;color:#999;margin-top:8px">ONにすると既存予定との衝突をチェックします</p>
-            </div>
+
             <div class="modal-actions">
                 <button class="action-btn danger" id="deleteButton" onclick="deleteEvent()" style="display:none">削除</button>
                 <button class="action-btn danger" id="deleteSingleButton" onclick="deleteSingle()" style="display:none">この予定のみ削除</button>
                 <button class="action-btn danger" id="deleteFromButton" onclick="deleteFrom()" style="display:none">この日以降を削除</button>
                 <button class="action-btn secondary" onclick="closeEvent()">キャンセル</button>
-                <button class="action-btn primary" onclick="saveEvent()">保存</button>
+                <button class="action-btn primary" id="saveEventBtn" onclick="saveEvent()">保存</button>
             </div>
         </div>
     </div>
@@ -659,7 +653,6 @@
     <script src="search.js"></script>
     <script src="holiday-fetch.js"></script>
     <script src="management-modals.js"></script>
-    <script src="old-repeat-check.js"></script><!-- ⭐ 古い繰り返し予定チェック機能 -->
     <script src="duplicate-detection-optimized.js"></script><!-- ⭐ 重複予定チェック機能（読み取り0回） -->
     <script src="backup-restore.js"></script><!-- ⭐ バックアップ＆復元機能 -->
     
