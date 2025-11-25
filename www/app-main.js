@@ -153,6 +153,26 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
         return;
     }
     
+    // ⭐ 該当日の元スタッフの予約を確認
+    const reservationsToTransfer = this.events.filter(e => 
+        e.member === originalStaff && e.date === date
+    );
+    
+    let shouldTransfer = false;
+    
+    if (reservationsToTransfer.length > 0) {
+        const dateObj = this.createLocalDate(date);
+        const days = ['日','月','火','水','木','金','土'];
+        const dateText = `${dateObj.getMonth() + 1}/${dateObj.getDate()}(${days[dateObj.getDay()]})`;
+        
+        const message = `${dateText}に${originalStaff}の予約が${reservationsToTransfer.length}件あります。\n\n` +
+                       `これらの予約を${replacementStaff}に引き継ぎますか？\n\n` +
+                       `「はい」を選択すると、予約のスタッフが自動的に${replacementStaff}に変更されます。\n` +
+                       `「いいえ」を選択すると、予約はそのまま${originalStaff}に残ります。`;
+        
+        shouldTransfer = confirm(message);
+    }
+    
     try {
         updateSyncStatus('syncing');
         
@@ -163,8 +183,25 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
             createdAt: new Date()
         });
         
-        updateSyncStatus('synced');
-        this.showNotification('スタッフ入れ替えを追加しました', 'success');
+        // ⭐ 予約を引き継ぐ場合の処理
+        if (shouldTransfer && reservationsToTransfer.length > 0) {
+            this.showNotification(`予約を引き継ぎ中... (${reservationsToTransfer.length}件)`, 'info');
+            
+            const batch = db.batch();
+            for (const event of reservationsToTransfer) {
+                const eventRef = db.collection('events').doc(event.id);
+                batch.update(eventRef, {
+                    member: replacementStaff,
+                    updatedAt: new Date()
+                });
+            }
+            await batch.commit();
+            
+            this.showNotification(`スタッフ入れ替えを追加し、${reservationsToTransfer.length}件の予約を引き継ぎました`, 'success');
+        } else {
+            updateSyncStatus('synced');
+            this.showNotification('スタッフ入れ替えを追加しました', 'success');
+        }
         
         dateInput.value = '';
         originalSelect.value = '';
@@ -191,11 +228,50 @@ FirebaseScheduleManager.prototype.deleteStaffOverride = async function(i) {
     const dateText = `${date.getMonth() + 1}/${date.getDate()}(${days[date.getDay()]})`;
     
     if (confirm(`${dateText}のスタッフ入れ替えを削除しますか?\n${override.originalStaff} → ${override.replacementStaff}`)) {
+        // ⭐ 該当日の代わりスタッフの予約を確認（元々引き継がれた可能性のある予約）
+        const reservationsToRevert = this.events.filter(e => 
+            e.member === override.replacementStaff && e.date === override.date
+        );
+        
+        let shouldRevert = false;
+        
+        if (reservationsToRevert.length > 0) {
+            const message = `${dateText}に${override.replacementStaff}の予約が${reservationsToRevert.length}件あります。\n\n` +
+                           `これらの予約を${override.originalStaff}に戻しますか？\n\n` +
+                           `「はい」を選択すると、予約のスタッフが${override.originalStaff}に変更されます。\n` +
+                           `「いいえ」を選択すると、予約は${override.replacementStaff}のまま残ります。`;
+            
+            shouldRevert = confirm(message);
+        }
+        
         try {
             updateSyncStatus('syncing');
+            
+            // ⭐ 予約を元に戻す場合の処理
+            if (shouldRevert && reservationsToRevert.length > 0) {
+                this.showNotification(`予約を元に戻し中... (${reservationsToRevert.length}件)`, 'info');
+                
+                const batch = db.batch();
+                for (const event of reservationsToRevert) {
+                    const eventRef = db.collection('events').doc(event.id);
+                    batch.update(eventRef, {
+                        member: override.originalStaff,
+                        updatedAt: new Date()
+                    });
+                }
+                await batch.commit();
+            }
+            
+            // スタッフ入れ替え設定を削除
             await db.collection('staffOverrides').doc(override.id).delete();
+            
             updateSyncStatus('synced');
-            this.showNotification('スタッフ入れ替えを削除しました', 'success');
+            
+            if (shouldRevert && reservationsToRevert.length > 0) {
+                this.showNotification(`スタッフ入れ替えを削除し、${reservationsToRevert.length}件の予約を元に戻しました`, 'success');
+            } else {
+                this.showNotification('スタッフ入れ替えを削除しました', 'success');
+            }
             
             this.renderStaffOverrideList();
             
@@ -1329,6 +1405,12 @@ FirebaseScheduleManager.prototype.handleDrop = async function(e) {
             eventData.date = date;
             eventData.time = time;
             eventData.updatedAt = new Date();
+            
+            // ⭐ ドラッグ移動も手動変更としてマーク
+            if (eventData.repeatParent) {
+                eventData.manuallyModified = true;
+                console.log('Marking dragged event as manually modified');
+            }
             
             await this.saveEventToFirestore(eventData);
             updateSyncStatus('synced');

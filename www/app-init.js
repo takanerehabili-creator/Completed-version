@@ -647,7 +647,7 @@ console.log('Ready for production use');
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%) scale(1.5);
+            transform: translate(-50%, -50%);
             background: rgba(33, 150, 243, 0.95);
             color: white;
             padding: 20px 40px;
@@ -655,16 +655,35 @@ console.log('Ready for production use');
             font-size: 20px;
             font-weight: bold;
             z-index: 10000;
-            animation: pinchInZoom 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
             box-shadow: 0 8px 32px rgba(33, 150, 243, 0.4);
             white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-out;
         `;
         
         overlay.appendChild(feedback);
         
+        // フェードイン＆ズームイン
+        setTimeout(() => {
+            feedback.style.opacity = '1';
+            feedback.style.transform = 'translate(-50%, -50%) scale(1.1)';
+        }, 10);
+        
+        // 少し待ってから通常サイズに
+        setTimeout(() => {
+            feedback.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 200);
+        
+        // フェードアウト開始（1.2秒後から）
+        setTimeout(() => {
+            feedback.style.opacity = '0';
+            feedback.style.transform = 'translate(-50%, -50%) scale(0.9)';
+        }, 1200);
+        
+        // 完全に削除（2.2秒後）
         setTimeout(() => {
             feedback.remove();
-        }, 800);
+        }, 2200);
     }
     
     // ピンチインアニメーション（バッジ通知を使用）

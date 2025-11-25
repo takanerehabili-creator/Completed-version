@@ -291,7 +291,7 @@ FirebaseScheduleManager.prototype.buildEvent = function(member, date, time, isHo
     
     if (normalEvent) {
         let content = '';
-        if (['20min', '40min', '60min', 'visit', 'workinjury20', 'workinjury40', 'accident', 'other'].includes(normalEvent.type)) {
+        if (['20min', '40min', '60min', 'visit', 'workinjury20', 'workinjury40', 'accident', 'crutch', 'other'].includes(normalEvent.type)) {
             const surname = normalEvent.surname || '';
             const firstname = normalEvent.firstname || '';
             const getSize = (text) => this.getEventFontSize(text);
@@ -524,6 +524,13 @@ FirebaseScheduleManager.prototype.toggleInputs = function(type) {
         } else {
             newPatientSection.style.display = 'none';
         }
+    } else if (type === 'crutch') {
+        // ⭐ 松葉杖指導: 姓名入力あり、繰り返しなし
+        surname.classList.remove('hidden');
+        firstname.classList.remove('hidden');
+        timeRange.style.display = 'none';
+        repeat.classList.add('hidden');  // 繰り返しを非表示
+        newPatientSection.style.display = 'none';
     } else if (type === 'day' || type === 'meeting') {
         surname.classList.add('hidden');
         firstname.classList.add('hidden');
@@ -563,7 +570,7 @@ FirebaseScheduleManager.prototype.updateSelectedTimeDisplay = function() {
     } else if (this.selectedType === '20min' || this.selectedType === '40min' || this.selectedType === '60min' ||
                this.selectedType === 'visit' ||
                this.selectedType === 'workinjury20' || this.selectedType === 'workinjury40' || 
-               this.selectedType === 'accident' || this.selectedType === 'other') {
+               this.selectedType === 'accident' || this.selectedType === 'crutch' || this.selectedType === 'other') {
         const calculatedTimes = this.calculateModalStartEndTimeSequential(member, this.clickedCell.date, this.clickedCell.time, this.selectedType);
         const duration = (this.selectedType === '40min' || this.selectedType === 'workinjury40' || this.selectedType === 'visit') ? '40分' :
                         (this.selectedType === '60min') ? '60分' : '20分';

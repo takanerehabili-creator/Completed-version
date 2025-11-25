@@ -41,7 +41,8 @@
                 </div>
                 <button class="btn" onclick="goToToday()">今日</button>
                 <button class="btn" id="bulkMenuBtn" onclick="toggleBulkMenu()">一括</button>
-                <button class="btn" onclick="openSearchModal()">検索</button>
+                <button class="btn" onclick="openSearchSidebar()">検索</button>
+                <button class="btn" onclick="openHistorySidebar()">履歴</button>
                 <button class="btn" id="reconnectBtn" onclick="if(app) app.manualReconnect()" style="display:none;background:#ff9800;color:white;">🔄 再接続</button>
                 
                 <!-- 一括メニュー（初期状態は非表示） -->
@@ -65,7 +66,8 @@
                     <div class="mobile-right">
                         <button class="btn" onclick="goToToday()">今日</button>
                         <button class="btn" id="bulkMenuBtnMobile" onclick="toggleBulkMenu()">一括</button>
-                        <button class="btn" onclick="openSearchModal()">検索</button>
+                        <button class="btn" onclick="openSearchSidebar()">検索</button>
+                        <button class="btn" onclick="openHistorySidebar()">履歴</button>
                         <button class="btn" id="reconnectBtnMobile" onclick="if(app) app.manualReconnect()" style="display:none;background:#ff9800;color:white;font-size:20px;padding:4px 8px;">🔄</button>
                         <span class="cache-status" id="cacheStatusMobile">キャッシュ: 0週</span>
                     </div>
@@ -93,30 +95,34 @@
 
     </div>
 
-    <!-- 検索モーダル -->
-    <div id="searchModal" class="modal">
-        <div class="modal-content" style="max-width:600px">
-            <span class="close" onclick="closeSearchModal()">&times;</span>
-            <h2 class="modal-header">予定検索</h2>
-            
-            <div class="form-section">
-                <label class="form-label">名前で検索:</label>
-                <input type="text" id="searchNameInput" class="input" placeholder="姓または名を入力" 
-                       style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #ddd"
-                       onkeyup="if(event.key==='Enter') searchByName()">
-                <button class="action-btn primary" onclick="searchByName()" style="margin-top:10px;width:100%">🔍 検索</button>
+    <!-- 検索サイドバー -->
+    <div id="searchOverlay" class="search-overlay"></div>
+    <div id="searchSidebar" class="search-sidebar">
+        <div class="search-sidebar-header">
+            <h2 style="margin:0;font-size:20px;font-weight:600;color:#333">🔍 予定検索</h2>
+            <button onclick="closeSearchSidebar()" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        </div>
+        
+        <div class="search-sidebar-content">
+            <div style="margin-bottom:20px">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;font-size:14px">名前で検索:</label>
+                <input type="text" id="sidebarSearchInput" placeholder="姓または名を入力" 
+                       style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
+                <button onclick="searchBySidebar()" 
+                        style="width:100%;margin-top:10px;padding:12px;background:#4285f4;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background 0.2s"
+                        onmouseover="this.style.background='#3367d6'"
+                        onmouseout="this.style.background='#4285f4'">
+                    🔍 検索
+                </button>
             </div>
             
-            <div id="searchResults" style="display:none;margin-top:20px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                    <h3 style="margin:0;font-size:16px">検索結果: <span id="searchResultCount">0</span>件</h3>
-                    <button class="action-btn secondary" onclick="clearSearchResults()" style="padding:6px 12px;font-size:13px">クリア</button>
+            <div id="sidebarSearchResults" style="display:none">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:2px solid #e0e0e0">
+                    <h3 style="margin:0;font-size:16px;font-weight:600;color:#333">
+                        検索結果: <span id="sidebarSearchResultCount" style="color:#4285f4">0</span>件
+                    </h3>
                 </div>
-                <div id="searchResultList" style="max-height:400px;overflow-y:auto;background:#f9f9f9;border-radius:8px;padding:10px"></div>
-            </div>
-            
-            <div class="modal-actions" style="margin-top:20px">
-                <button class="action-btn secondary" onclick="closeSearchModal()">閉じる</button>
+                <div id="sidebarSearchResultList"></div>
             </div>
         </div>
     </div>
@@ -564,6 +570,7 @@
                     <div class="type-option type-workinjury20" data-type="workinjury20">労災20分</div>
                     <div class="type-option type-workinjury40" data-type="workinjury40">労災40分</div>
                     <div class="type-option type-accident" data-type="accident">事故</div>
+                    <div class="type-option type-crutch" data-type="crutch">松葉杖指導</div>
                     <div class="type-option type-day" data-type="day">デイ</div>
                     <div class="type-option type-meeting" data-type="meeting">担会</div>
                     <div class="type-option type-other" data-type="other">その他</div>
@@ -650,7 +657,9 @@
     <script src="trouble-delete.js"></script>
     <script src="bulk-reservation.js"></script>
     <script src="bulk-delete.js"></script>
-    <script src="search.js"></script>
+    <script src="search-sidebar.js"></script><!-- ⭐ 検索機能（サイドバー版） -->
+    <script src="audit-log.js"></script><!-- ⭐ 履歴記録機能 -->
+    <script src="history-sidebar.js"></script><!-- ⭐ 履歴表示機能 -->
     <script src="holiday-fetch.js"></script>
     <script src="management-modals.js"></script>
     <script src="duplicate-detection-optimized.js"></script><!-- ⭐ 重複予定チェック機能（読み取り0回） -->
@@ -738,5 +747,100 @@
         }
     });
 </script>
+
+<!-- 履歴サイドバー -->
+<div id="historyOverlay" class="history-overlay"></div>
+<div id="historySidebar" class="history-sidebar">
+    <div class="history-sidebar-header">
+        <h2 style="margin:0;font-size:20px;font-weight:600;color:#333">📋 操作履歴</h2>
+        <button onclick="closeHistorySidebar()" 
+                style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;line-height:1;padding:0">
+            ×
+        </button>
+    </div>
+    
+    <div class="history-sidebar-content">
+        <!-- 結果表示（前面に移動） -->
+        <div style="background:#e3f2fd;border-left:4px solid #2196f3;padding:12px;margin-bottom:15px;border-radius:4px;position:relative;z-index:1">
+            <div style="font-size:13px;color:#1976d2">
+                履歴: <span id="historyResultCount" style="font-weight:600;font-size:15px">0</span>件
+            </div>
+        </div>
+        
+        <!-- フィルター折りたたみボタン -->
+        <button onclick="toggleHistoryFilters()" 
+                class="action-btn secondary" 
+                style="width:100%;margin-bottom:15px;padding:10px;display:flex;justify-content:space-between;align-items:center">
+            <span>🔍 フィルター</span>
+            <span id="filterToggleIcon">▼</span>
+        </button>
+        
+        <!-- フィルター（初期状態は非表示） -->
+        <div id="historyFiltersContainer" style="display:none;background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:20px">
+            <!-- 日付範囲 -->
+            <div style="margin-bottom:12px">
+                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">期間:</label>
+                <select id="historyDateRange" 
+                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+                    <option value="7">過去7日間</option>
+                    <option value="30">過去30日間</option>
+                    <option value="90">過去90日間</option>
+                    <option value="all">全期間</option>
+                </select>
+            </div>
+            
+            <!-- メンバー -->
+            <div style="margin-bottom:12px">
+                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">担当:</label>
+                <select id="historyMemberFilter" 
+                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+                    <option value="all">すべて</option>
+                    <!-- メンバーは動的に追加される -->
+                </select>
+            </div>
+            
+            <!-- アクション -->
+            <div style="margin-bottom:12px">
+                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">操作:</label>
+                <select id="historyActionFilter" 
+                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+                    <option value="all">すべて</option>
+                    <option value="create">🆕 追加</option>
+                    <option value="update">✏️ 変更</option>
+                    <option value="delete">🗑️ 削除</option>
+                </select>
+            </div>
+            
+            <div style="display:flex;gap:8px">
+                <button onclick="applyHistoryFilters()" 
+                        class="action-btn primary" 
+                        style="flex:1;padding:8px;font-size:13px">
+                    適用
+                </button>
+                <button onclick="resetHistoryFilters()" 
+                        class="action-btn secondary" 
+                        style="flex:1;padding:8px;font-size:13px">
+                    リセット
+                </button>
+            </div>
+        </div>
+        
+        <!-- 履歴リスト -->
+        <div id="historyLogsContainer">
+            <div style="text-align:center;padding:40px;color:#999">
+                📋 履歴を読み込んでいます...
+            </div>
+        </div>
+        
+        <!-- さらに読み込むボタン -->
+        <button id="loadMoreHistoryBtn" 
+                onclick="loadHistoryLogs(true)" 
+                class="action-btn secondary" 
+                style="width:100%;margin-top:10px;display:none">
+            さらに読み込む
+        </button>
+    </div>
+</div>
+
 </body>
 </html>

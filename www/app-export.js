@@ -211,7 +211,7 @@ FirebaseScheduleManager.prototype.generateStaffExcelData = function(staff) {
                        (e.type === '20min' || e.type === '40min' || e.type === '60min' ||
                         e.type === 'visit' ||
                         e.type === 'workinjury20' || e.type === 'workinjury40' || 
-                        e.type === 'accident' || e.type === 'other'))
+                        e.type === 'accident'))
                 .sort((a, b) => this.timeSlots.indexOf(a.time) - this.timeSlots.indexOf(b.time));
             
             dailySchedules[i] = this.calculateStartEndTimes(dayEvents, dateString, memberName);
@@ -279,7 +279,7 @@ FirebaseScheduleManager.prototype.calculateStartEndTimes = function(events, date
                      (event.type === '40min' || event.type === 'workinjury40' || event.type === 'visit') ? 2 : 1;
         
         let eventType = '';
-        if (event.type === '20min' || event.type === '40min' || event.type === '60min' || event.type === 'other') {
+        if (event.type === '20min' || event.type === '40min' || event.type === '60min') {
             eventType = '外';
         } else if (event.type === 'visit') {
             eventType = '訪';
@@ -590,6 +590,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                         }
                                         break;
                                     case 'accident': eventBg = '#ffcdd2'; break;
+                                    case 'crutch': eventBg = '#cfd8dc'; break;
                                     case 'other': eventBg = '#e1bee7'; break;
                                 }
                             
@@ -600,7 +601,7 @@ FirebaseScheduleManager.prototype.build3DayPDF = function(startDay) {
                                 if (event.type === '20min' || event.type === '40min' || event.type === '60min' ||
                                     event.type === 'visit' ||
                                     event.type === 'workinjury20' || event.type === 'workinjury40' || 
-                                    event.type === 'accident' || event.type === 'other') {
+                                    event.type === 'accident' || event.type === 'crutch' || event.type === 'other') {
                                     const surname = event.surname || '';
                                     const firstname = event.firstname || '';
                                     const getSize = text => text.length <= 4 ? '13.5px' : text.length === 5 ? '11px' : '9px';

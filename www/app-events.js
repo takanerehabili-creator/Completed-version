@@ -1,34 +1,14 @@
 // イベント保存・削除機能(FirebaseScheduleManagerクラスに追加するメソッド)
 
 FirebaseScheduleManager.prototype.saveEvent = async function() {
-    // ⭐ ローディング状態を開始
-    const saveBtn = document.getElementById('saveEventBtn');
-    if (saveBtn) {
-        saveBtn.classList.add('loading');
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<span class="spinner"></span>保存中...';
-    }
-    
     if (!this.selectedType) {
         this.showNotification('予定種類を選択してください', 'error');
-        // ⭐ ローディング状態を解除
-        if (saveBtn) {
-            saveBtn.classList.remove('loading');
-            saveBtn.disabled = false;
-            saveBtn.textContent = '保存';
-        }
         return;
     }
 
     const {member, date, time} = this.clickedCell;
     if (this.isHoliday(date)) {
         this.showNotification('祝日には予定を追加できません', 'error');
-        // ⭐ ローディング状態を解除
-        if (saveBtn) {
-            saveBtn.classList.remove('loading');
-            saveBtn.disabled = false;
-            saveBtn.textContent = '保存';
-        }
         return;
     }
     
@@ -36,12 +16,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
     const hasStaffLeave = this.isStaffLeave(member, date, time);
     if (hasStaffLeave) {
         this.showNotification("この時間枠は休み設定されており、予定を追加できません", "error");
-        // ⭐ ローディング状態を解除
-        if (saveBtn) {
-            saveBtn.classList.remove('loading');
-            saveBtn.disabled = false;
-            saveBtn.textContent = '保存';
-        }
         return;
     }
 
@@ -54,12 +28,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         
         if (!startTime || !endTime) {
             this.showNotification('開始時刻と終了時刻を選択してください', 'error');
-            // ⭐ ローディング状態を解除
-            if (saveBtn) {
-                saveBtn.classList.remove('loading');
-                saveBtn.disabled = false;
-                saveBtn.textContent = '保存';
-            }
             return;
         }
         
@@ -71,12 +39,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         
         if (startIdx >= endIdx) {
             this.showNotification('終了時刻は開始時刻より後を選択してください', 'error');
-            // ⭐ ローディング状態を解除
-            if (saveBtn) {
-                saveBtn.classList.remove('loading');
-                saveBtn.disabled = false;
-                saveBtn.textContent = '保存';
-            }
             return;
         }
         
@@ -84,7 +46,7 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
     } else if (this.selectedType === '20min' || this.selectedType === '40min' || this.selectedType === '60min' ||
                this.selectedType === 'visit' ||
                this.selectedType === 'workinjury20' || this.selectedType === 'workinjury40' || 
-               this.selectedType === 'accident' || this.selectedType === 'other') {
+               this.selectedType === 'accident' || this.selectedType === 'crutch' || this.selectedType === 'other') {
         surname = document.getElementById('surnameInput').value.trim();
         firstname = document.getElementById('firstnameInput').value.trim();
         
@@ -93,12 +55,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             const surnameInput = document.getElementById('surnameInput');
             if (surnameInput) {
                 surnameInput.focus();
-            }
-            // ⭐ ローディング状態を解除
-            if (saveBtn) {
-                saveBtn.classList.remove('loading');
-                saveBtn.disabled = false;
-                saveBtn.textContent = '保存';
             }
             return;
         }
@@ -128,12 +84,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             if (!userChoice) {
                 this.closeModal();
                 this.showNotification('編集をキャンセルしました', 'info');
-                // ⭐ ローディング状態を解除
-                if (saveBtn) {
-                    saveBtn.classList.remove('loading');
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '保存';
-                }
                 return;
             }
         }
@@ -147,12 +97,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
             if (conflict) {
                 this.showNotification('その時間範囲には既にデイ/担会があります', 'error');
                 updateSyncStatus('synced');
-                // ⭐ ローディング状態を解除
-                if (saveBtn) {
-                    saveBtn.classList.remove('loading');
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '保存';
-                }
                 return;
             }
             
@@ -170,6 +114,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                 
                 const oldRepeat = this.editingEvent.repeat || 'none';
                 const newRepeat = eventData.repeat;
+                
+                // ⭐ 編集の場合、繰り返し予約を手動変更したとマーク
+                if (this.editingEvent.repeatParent && oldRepeat === newRepeat) {
+                    eventData.manuallyModified = true;
+                    console.log('Marking range event as manually modified');
+                }
                 
                 await this.saveEventToFirestore(eventData);
                 
@@ -227,6 +177,13 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                 const oldRepeat = this.editingEvent.repeat || 'none';
                 const newRepeat = eventData.repeat;
                 
+                // ⭐ 編集の場合、繰り返し予約を手動変更したとマーク
+                // ただし、繰り返し設定の追加/削除の場合は除く
+                if (this.editingEvent.repeatParent && oldRepeat === newRepeat) {
+                    eventData.manuallyModified = true;
+                    console.log('Marking event as manually modified');
+                }
+                
                 await this.saveEventToFirestore(eventData);
                 
                 if (oldRepeat === 'none' && newRepeat !== 'none') {
@@ -265,19 +222,11 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                         // ⭐ オーバーレイを非表示にして衝突モーダルを表示
                         hideRepeatSaveOverlay();
                         
-                        // ⭐ 衝突チェック中の表示を更新
-                        if (saveBtn) {
-                            saveBtn.innerHTML = '<span class="spinner"></span>衝突を検出しました';
-                        }
                         this.showConflictModal(conflicts, async (action) => {
                             if (action === 'replace') {
                                 // ⭐ オーバーレイを再表示
                                 showRepeatSaveOverlay('既存の予定を置き換え中...');
                                 
-                                // ⭐ 置き換え処理中の表示
-                                if (saveBtn) {
-                                    saveBtn.innerHTML = '<span class="spinner"></span>置き換え中...';
-                                }
                                 this.showNotification('繰り返し予定を生成中...（既存を置き換え）', 'info');
                                 for (const c of conflicts) await db.collection('events').doc(c.id).delete();
                                 await this.generateRepeatingInFirestore(eventData, newId, date);
@@ -286,22 +235,12 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                                 // ⭐ オーバーレイを非表示
                                 hideRepeatSaveOverlay();
                                 
-                                // ⭐ ローディング状態を解除
-                                if (saveBtn) {
-                                    saveBtn.classList.remove('loading');
-                                    saveBtn.disabled = false;
-                                    saveBtn.textContent = '保存';
-                                }
                                 this.closeModal();
                                 location.reload();
                             } else if (action === 'skip') {
                                 // ⭐ オーバーレイを再表示
                                 showRepeatSaveOverlay('衝突日をスキップして保存中...');
                                 
-                                // ⭐ スキップ処理中の表示
-                                if (saveBtn) {
-                                    saveBtn.innerHTML = '<span class="spinner"></span>スキップ中...';
-                                }
                                 this.showNotification('繰り返し予定を生成中...（衝突日をスキップ）', 'info');
                                 await this.generateRepeatingWithSkip(eventData, newId, date, conflicts);
                                 this.showNotification('繰り返し予定を作成しました（衝突日をスキップ）', 'success');
@@ -309,12 +248,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                                 // ⭐ オーバーレイを非表示
                                 hideRepeatSaveOverlay();
                                 
-                                // ⭐ ローディング状態を解除
-                                if (saveBtn) {
-                                    saveBtn.classList.remove('loading');
-                                    saveBtn.disabled = false;
-                                    saveBtn.textContent = '保存';
-                                }
                                 this.closeModal();
                                 location.reload();
                             } else {
@@ -323,12 +256,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
                                 
                                 await db.collection('events').doc(newId).delete();
                                 this.showNotification('繰り返し設定をキャンセルしました', 'info');
-                                // ⭐ ローディング状態を解除
-                                if (saveBtn) {
-                                    saveBtn.classList.remove('loading');
-                                    saveBtn.disabled = false;
-                                    saveBtn.textContent = '保存';
-                                }
                             }
                         });
                         return;
@@ -349,12 +276,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         }
         
         updateSyncStatus('synced');
-        // ⭐ ローディング状態を解除
-        if (saveBtn) {
-            saveBtn.classList.remove('loading');
-            saveBtn.disabled = false;
-            saveBtn.textContent = '保存';
-        }
         
     } catch (error) {
         this.showNotification('予定の保存に失敗しました', 'error');
@@ -363,13 +284,6 @@ FirebaseScheduleManager.prototype.saveEvent = async function() {
         
         // ⭐ エラー時にオーバーレイを非表示
         hideRepeatSaveOverlay();
-        
-        // ⭐ エラー時もローディング状態を解除
-        if (saveBtn) {
-            saveBtn.classList.remove('loading');
-            saveBtn.disabled = false;
-            saveBtn.textContent = '保存';
-        }
     }
 
     // ⭐ モーダルクローズ時にもオーバーレイを確実に非表示
@@ -401,8 +315,7 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEvents = async function(
         const nextDayOfWeek = nextDate.getDay();
         
         if (nextDayOfWeek === baseDayOfWeek && !this.isHoliday(dateStr)) {
-            const docRef = db.collection('events').doc();
-            batch.set(docRef, {
+            const repeatEvent = {
                 ...baseEvent,
                 date: dateStr,
                 member: baseEvent.member,
@@ -410,7 +323,17 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEvents = async function(
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 lastModified: Date.now()
+            };
+            
+            // ⭐ undefinedフィールドを削除（Firestoreエラー回避）
+            Object.keys(repeatEvent).forEach(key => {
+                if (repeatEvent[key] === undefined) {
+                    delete repeatEvent[key];
+                }
             });
+            
+            const docRef = db.collection('events').doc();
+            batch.set(docRef, repeatEvent);
             console.log(`Generated event for ${dateStr} (occurrence ${occurrenceCount}, day: ${nextDayOfWeek}, member: ${baseEvent.member})`);
         } else {
             console.log(`Skipped ${dateStr} - day mismatch (expected: ${baseDayOfWeek}, got: ${nextDayOfWeek}) or holiday`);
@@ -428,9 +351,74 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEvents = async function(
 };
 
 FirebaseScheduleManager.prototype.generateRepeatingInFirestore = async function(baseEvent, parentId, baseDate) {
+    // ⭐ 既存の繰り返し予約を検索（手動変更されていないものを削除）
+    console.log(`Checking for existing repeating events with parentId: ${parentId}`);
+    
+    const eventsToDelete = [];
+    
+    try {
+        // 1. repeatParentで検索（親が生きている場合）
+        const byParent = await db.collection('events')
+            .where('repeatParent', '==', parentId)
+            .get();
+        
+        byParent.docs.forEach(doc => {
+            const data = doc.data();
+            // 手動変更されていない予約のみ削除対象
+            if (!data.manuallyModified) {
+                eventsToDelete.push(doc);
+                console.log(`Will delete (not manually modified): ${data.date} ${data.time}`);
+            } else {
+                console.log(`Protecting (manually modified): ${data.date} ${data.time}`);
+            }
+        });
+        
+        // 2. 複合キーで検索（親が削除されている孤児を検出）
+        // 基準日から6ヶ月分の日付範囲で検索
+        const baseDateTime = this.createLocalDate(baseDate);
+        const endDate = new Date(baseDateTime);
+        endDate.setMonth(endDate.getMonth() + 6);
+        
+        const byKey = await db.collection('events')
+            .where('member', '==', baseEvent.member)
+            .where('surname', '==', baseEvent.surname || '')
+            .where('firstname', '==', baseEvent.firstname || '')
+            .where('time', '==', baseEvent.time)
+            .where('date', '>=', this.formatDate(baseDateTime))
+            .where('date', '<=', this.formatDate(endDate))
+            .get();
+        
+        const existingIds = new Set(eventsToDelete.map(doc => doc.id));
+        
+        byKey.docs.forEach(doc => {
+            const data = doc.data();
+            // まだ削除対象に入っていない && 手動変更されていない
+            if (!existingIds.has(doc.id) && !data.manuallyModified) {
+                eventsToDelete.push(doc);
+                console.log(`Will delete (orphan): ${data.date} ${data.time}`);
+            } else if (data.manuallyModified) {
+                console.log(`Protecting (manually modified orphan): ${data.date} ${data.time}`);
+            }
+        });
+        
+        // 削除実行
+        if (eventsToDelete.length > 0) {
+            console.log(`Deleting ${eventsToDelete.length} existing events...`);
+            const deleteBatch = db.batch();
+            eventsToDelete.forEach(doc => {
+                deleteBatch.delete(doc.ref);
+            });
+            await deleteBatch.commit();
+            console.log('Existing events deleted');
+        }
+    } catch (error) {
+        console.error('Error checking/deleting existing events:', error);
+    }
+    
+    // ⭐ 新しい繰り返し予約を生成
     const batch = db.batch();
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 3);
+    const endDateForGeneration = new Date();
+    endDateForGeneration.setMonth(endDateForGeneration.getMonth() + 3);
     
     const baseDateTime = this.createLocalDate(baseDate);
     const baseDayOfWeek = baseDateTime.getDay();
@@ -443,22 +431,32 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestore = async function(
         const nextDate = new Date(baseDateTime);
         nextDate.setDate(baseDateTime.getDate() + (intervalDays * occurrenceCount));
         
-        if (nextDate > endDate) break;
+        if (nextDate > endDateForGeneration) break;
         
         const dateStr = this.formatDate(nextDate);
         const nextDayOfWeek = nextDate.getDay();
         
         if (nextDayOfWeek === baseDayOfWeek && !this.isHoliday(dateStr)) {
-            const docRef = db.collection('events').doc();
-            batch.set(docRef, {
+            const repeatEvent = {
                 ...baseEvent,
                 date: dateStr,
                 member: baseEvent.member,
                 repeatParent: parentId,
+                manuallyModified: false,  // ⭐ 自動生成フラグ
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 lastModified: Date.now()
+            };
+            
+            // ⭐ undefinedフィールドを削除（Firestoreエラー回避）
+            Object.keys(repeatEvent).forEach(key => {
+                if (repeatEvent[key] === undefined) {
+                    delete repeatEvent[key];
+                }
             });
+            
+            const docRef = db.collection('events').doc();
+            batch.set(docRef, repeatEvent);
             console.log(`Generated event for ${dateStr} (occurrence ${occurrenceCount}, day: ${nextDayOfWeek}, member: ${baseEvent.member})`);
         } else {
             console.log(`Skipped ${dateStr} - day mismatch (expected: ${baseDayOfWeek}, got: ${nextDayOfWeek}) or holiday`);

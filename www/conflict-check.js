@@ -178,9 +178,70 @@ FirebaseScheduleManager.prototype.showConflictModal = function(conflicts, onReso
 
 // 3. スキップ付き繰り返し生成（通常イベント）- 6ヶ月対応
 FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(baseEvent, parentId, baseDate, conflicts) {
+    // ⭐ 既存の繰り返し予約を検索（手動変更されていないものを削除）
+    console.log(`Checking for existing repeating events with parentId: ${parentId}`);
+    
+    const eventsToDelete = [];
+    
+    try {
+        // 1. repeatParentで検索
+        const byParent = await db.collection('events')
+            .where('repeatParent', '==', parentId)
+            .get();
+        
+        byParent.docs.forEach(doc => {
+            const data = doc.data();
+            if (!data.manuallyModified) {
+                eventsToDelete.push(doc);
+                console.log(`Will delete (not manually modified): ${data.date} ${data.time}`);
+            } else {
+                console.log(`Protecting (manually modified): ${data.date} ${data.time}`);
+            }
+        });
+        
+        // 2. 複合キーで検索（孤児を検出）
+        const baseDateTime = this.createLocalDate(baseDate);
+        const endDate = new Date(baseDateTime);
+        endDate.setMonth(endDate.getMonth() + 6);
+        
+        const byKey = await db.collection('events')
+            .where('member', '==', baseEvent.member)
+            .where('surname', '==', baseEvent.surname || '')
+            .where('firstname', '==', baseEvent.firstname || '')
+            .where('time', '==', baseEvent.time)
+            .where('date', '>=', this.formatDate(baseDateTime))
+            .where('date', '<=', this.formatDate(endDate))
+            .get();
+        
+        const existingIds = new Set(eventsToDelete.map(doc => doc.id));
+        
+        byKey.docs.forEach(doc => {
+            const data = doc.data();
+            if (!existingIds.has(doc.id) && !data.manuallyModified) {
+                eventsToDelete.push(doc);
+                console.log(`Will delete (orphan): ${data.date} ${data.time}`);
+            } else if (data.manuallyModified) {
+                console.log(`Protecting (manually modified orphan): ${data.date} ${data.time}`);
+            }
+        });
+        
+        // 削除実行
+        if (eventsToDelete.length > 0) {
+            console.log(`Deleting ${eventsToDelete.length} existing events...`);
+            const deleteBatch = db.batch();
+            eventsToDelete.forEach(doc => {
+                deleteBatch.delete(doc.ref);
+            });
+            await deleteBatch.commit();
+            console.log('Existing events deleted');
+        }
+    } catch (error) {
+        console.error('Error checking/deleting existing events:', error);
+    }
+    
     const batch = db.batch();
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 6); // ⭐ 6ヶ月に変更
+    const endDateForGeneration = new Date();
+    endDateForGeneration.setMonth(endDateForGeneration.getMonth() + 6); // ⭐ 6ヶ月に変更
     
     const baseDateTime = this.createLocalDate(baseDate);
     const intervalDays = this.getInterval(baseEvent.repeat);
@@ -195,7 +256,7 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
         const nextDate = new Date(baseDateTime);
         nextDate.setDate(baseDateTime.getDate() + (intervalDays * occurrenceCount));
         
-        if (nextDate > endDate) break;
+        if (nextDate > endDateForGeneration) break;
         
         const nextDateStr = this.formatDate(nextDate);
         
@@ -210,6 +271,7 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
             ...baseEvent,
             date: nextDateStr,
             repeatParent: parentId,
+            manuallyModified: false,  // ⭐ 自動生成フラグ
             repeatPattern: {  // ⭐ 繰り返し設定を保存
                 type: baseEvent.repeat,
                 intervalDays: intervalDays,
@@ -237,6 +299,41 @@ FirebaseScheduleManager.prototype.generateRepeatingWithSkip = async function(bas
 
 // 4. スキップ付き繰り返し生成（範囲イベント）- 6ヶ月対応
 FirebaseScheduleManager.prototype.generateRangeRepeatingWithSkip = async function(baseEvent, parentId, baseDate, conflicts) {
+    // ⭐ 既存の繰り返し予約を検索（手動変更されていないものを削除）
+    console.log(`Checking for existing repeating range events with parentId: ${parentId}`);
+    
+    const eventsToDelete = [];
+    
+    try {
+        // 範囲イベントの場合はrepeatParentのみで検索（複合キー検索は不要）
+        const byParent = await db.collection('events')
+            .where('repeatParent', '==', parentId)
+            .get();
+        
+        byParent.docs.forEach(doc => {
+            const data = doc.data();
+            if (!data.manuallyModified) {
+                eventsToDelete.push(doc);
+                console.log(`Will delete (not manually modified): ${data.date}`);
+            } else {
+                console.log(`Protecting (manually modified): ${data.date}`);
+            }
+        });
+        
+        // 削除実行
+        if (eventsToDelete.length > 0) {
+            console.log(`Deleting ${eventsToDelete.length} existing range events...`);
+            const deleteBatch = db.batch();
+            eventsToDelete.forEach(doc => {
+                deleteBatch.delete(doc.ref);
+            });
+            await deleteBatch.commit();
+            console.log('Existing range events deleted');
+        }
+    } catch (error) {
+        console.error('Error checking/deleting existing range events:', error);
+    }
+    
     const batch = db.batch();
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + 6); // ⭐ 6ヶ月に変更
@@ -266,6 +363,7 @@ FirebaseScheduleManager.prototype.generateRangeRepeatingWithSkip = async functio
             ...baseEvent,
             date: nextDateStr,
             repeatParent: parentId,
+            manuallyModified: false,  // ⭐ 自動生成フラグ
             repeatPattern: {  // ⭐ 繰り返し設定を保存
                 type: baseEvent.repeat,
                 intervalDays: intervalDays,

@@ -1,4 +1,4 @@
-// ===== 繰り返し予定の自動生成機能（最適化版） =====
+// ===== 繰り返し予定の自動生成機能（最適化版 + 衝突チェック対応） =====
 
 /**
  * 要件:
@@ -6,12 +6,46 @@
  * 2. アプリ起動時に「今日から2ヶ月先」までデータがあるかチェック
  * 3. 不足していれば6ヶ月分を追加生成
  * 4. 親イベントが削除されても、子イベントから繰り返し設定を読み取って継続
+ * 5. ⭐ NEW: 自動生成時に既存予約との衝突をチェックし、衝突日はスキップ
  * 
  * 最適化:
  * - チェックは毎週月曜日の初回起動時のみ実行（読み取り回数を削減）
  */
 
-// 繰り返しパターンを子イベントに保存するための拡張
+// ⭐ ヘルパー関数: 時間範囲の重複チェック
+function checkTimeOverlap(time1, type1, time2, type2) {
+    if (!time1 || !time2) return false;
+    
+    // 各イベントの時間範囲を計算
+    const getDuration = (type) => {
+        switch(type) {
+            case '40min':
+            case 'workinjury40':
+            case 'visit':
+                return 40;
+            case '60min':
+                return 60;
+            case '20min':
+            case 'workinjury20':
+            case 'accident':
+            default:
+                return 20;
+        }
+    };
+    
+    const [hour1, min1] = time1.split(':').map(Number);
+    const start1 = hour1 * 60 + min1;
+    const end1 = start1 + getDuration(type1);
+    
+    const [hour2, min2] = time2.split(':').map(Number);
+    const start2 = hour2 * 60 + min2;
+    const end2 = start2 + getDuration(type2);
+    
+    // 時間範囲の重複判定
+    return (start1 < end2) && (end1 > start2);
+}
+
+// 繰り返しパターンを子イベントに保存するための拡張（衝突チェック対応）
 FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async function(baseEvent, parentId, baseDate) {
     const batch = db.batch();
     const endDate = new Date();
@@ -20,8 +54,9 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
     const baseDateTime = this.createLocalDate(baseDate);
     const intervalDays = this.getInterval(baseEvent.repeat);
     let occurrenceCount = 1;
+    let skippedCount = 0;
     
-    console.log(`=== 6ヶ月分の繰り返し生成開始 ===`);
+    console.log(`=== 6ヶ月分の繰り返し生成開始（衝突チェック有効） ===`);
     console.log('Base date:', baseDate);
     console.log('Parent ID:', parentId);
     console.log('Interval:', intervalDays, 'days');
@@ -49,6 +84,46 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
             continue;
         }
         
+        // ⭐ NEW: 既存予約との衝突チェック
+        try {
+            const snapshot = await db.collection('events')
+                .where('member', '==', baseEvent.member)
+                .where('date', '==', nextDateStr)
+                .get();
+            
+            let hasConflict = false;
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                // 同じ繰り返しグループは除外（自分自身との衝突は無視）
+                if (data.repeatParent === parentId || doc.id === parentId) {
+                    return;
+                }
+                
+                // 時間情報がない場合はスキップ
+                if (!data.time) {
+                    return;
+                }
+                
+                // 時間範囲の重複チェック
+                if (checkTimeOverlap(baseEvent.time, baseEvent.type, data.time, data.type)) {
+                    console.log(`⚠️ Conflict detected on ${nextDateStr}:`);
+                    console.log(`  Auto-generate: ${baseEvent.time} (${baseEvent.type})`);
+                    console.log(`  Existing: ${data.time} (${data.type}) - ${data.displayName || data.surname + data.firstname}`);
+                    hasConflict = true;
+                }
+            });
+            
+            if (hasConflict) {
+                console.log(`⏭️ Skipped conflict date: ${nextDateStr}`);
+                skippedCount++;
+                occurrenceCount++;
+                continue;
+            }
+        } catch (error) {
+            console.error(`Error checking conflicts for ${nextDateStr}:`, error);
+            // エラーが発生しても続行（安全のため）
+        }
+        
         // 子イベントに繰り返しパターンを保存
         const repeatEvent = {
             ...baseEvent,
@@ -64,18 +139,25 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
             lastModified: Date.now()
         };
         
+        // ⭐ undefinedフィールドを削除（Firestoreエラー回避）
+        Object.keys(repeatEvent).forEach(key => {
+            if (repeatEvent[key] === undefined) {
+                delete repeatEvent[key];
+            }
+        });
+        
         const newDocRef = db.collection('events').doc();
         batch.set(newDocRef, repeatEvent);
         
-        console.log(`Generated: ${nextDateStr} (occurrence ${occurrenceCount})`);
+        console.log(`✅ Generated: ${nextDateStr} (occurrence ${occurrenceCount})`);
         occurrenceCount++;
     }
     
     await batch.commit();
-    console.log(`=== 生成完了: ${occurrenceCount - 1}件 ===`);
+    console.log(`=== 生成完了: ${occurrenceCount - 1 - skippedCount}件生成、${skippedCount}件スキップ ===`);
 };
 
-// 範囲イベント（デイ・担会）用の6ヶ月生成
+// 範囲イベント（デイ・担会）用の6ヶ月生成（衝突チェック対応）
 FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async function(baseEvent, parentId, baseDate) {
     const batch = db.batch();
     const endDate = new Date();
@@ -85,8 +167,9 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
     const baseDayOfWeek = baseDateTime.getDay();
     const intervalDays = this.getInterval(baseEvent.repeat);
     let occurrenceCount = 1;
+    let skippedCount = 0;
     
-    console.log(`=== 範囲イベント6ヶ月分の生成開始 ===`);
+    console.log(`=== 範囲イベント6ヶ月分の生成開始（衝突チェック有効） ===`);
     console.log('Base date:', baseDate, 'Day of week:', baseDayOfWeek);
     console.log('Parent ID:', parentId);
     console.log('Interval:', intervalDays, 'days');
@@ -101,6 +184,41 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
         const nextDayOfWeek = nextDate.getDay();
         
         if (nextDayOfWeek === baseDayOfWeek && !this.isHoliday(dateStr)) {
+            // ⭐ NEW: 既存の範囲イベントとの衝突チェック
+            try {
+                const snapshot = await db.collection('events')
+                    .where('member', '==', baseEvent.member)
+                    .where('date', '==', dateStr)
+                    .get();
+                
+                let hasConflict = false;
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // 同じ繰り返しグループは除外
+                    if (data.repeatParent === parentId || doc.id === parentId) {
+                        return;
+                    }
+                    
+                    // 同じタイプ（デイ or 担会）の範囲イベントがあれば衝突
+                    if (data.type === 'day' || data.type === 'meeting') {
+                        console.log(`⚠️ Range event conflict detected on ${dateStr}:`);
+                        console.log(`  Auto-generate: ${baseEvent.type}`);
+                        console.log(`  Existing: ${data.type}`);
+                        hasConflict = true;
+                    }
+                });
+                
+                if (hasConflict) {
+                    console.log(`⏭️ Skipped conflict date: ${dateStr}`);
+                    skippedCount++;
+                    occurrenceCount++;
+                    continue;
+                }
+            } catch (error) {
+                console.error(`Error checking range conflicts for ${dateStr}:`, error);
+                // エラーが発生しても続行（安全のため）
+            }
+            
             const repeatEvent = {
                 ...baseEvent,
                 date: dateStr,
@@ -117,16 +235,23 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
                 lastModified: Date.now()
             };
             
+            // ⭐ undefinedフィールドを削除（Firestoreエラー回避）
+            Object.keys(repeatEvent).forEach(key => {
+                if (repeatEvent[key] === undefined) {
+                    delete repeatEvent[key];
+                }
+            });
+            
             const docRef = db.collection('events').doc();
             batch.set(docRef, repeatEvent);
-            console.log(`Generated: ${dateStr} (occurrence ${occurrenceCount})`);
+            console.log(`✅ Generated: ${dateStr} (occurrence ${occurrenceCount})`);
         }
         
         occurrenceCount++;
     }
     
     await batch.commit();
-    console.log(`=== 範囲イベント生成完了 ===`);
+    console.log(`=== 範囲イベント生成完了: スキップ ${skippedCount}件 ===`);
 };
 
 // ⭐ スマート時刻判定: 多数決 + 連続変更検知
@@ -227,9 +352,9 @@ function shouldRunRepeatCheck() {
     return false;
 }
 
-// アプリ起動時のチェック＆自動生成（最適化版）
+// アプリ起動時のチェック＆自動生成（最適化版 + 衝突チェック対応）
 FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function() {
-    console.log('=== 繰り返しイベントのチェック開始 ===');
+    console.log('=== 繰り返しイベントのチェック開始（衝突チェック有効） ===');
     
     // ⭐ 最適化: 週1回のみ実行
     if (!shouldRunRepeatCheck()) {
@@ -336,8 +461,8 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
         console.log(`✅ Repeat check completed and recorded: ${thisMonday}`);
         
         if (generatedCount > 0) {
-            console.log(`\n=== ${generatedCount}個の繰り返しグループに追加生成しました ===`);
-            this.showNotification(`${generatedCount}個の繰り返し予定を更新しました`, 'info');
+            console.log(`\n=== ${generatedCount}個の繰り返しグループに追加生成しました（衝突はスキップ） ===`);
+            this.showNotification(`${generatedCount}個の繰り返し予定を更新しました（衝突日は自動スキップ）`, 'info');
         } else {
             console.log('\n=== すべての繰り返し予定は最新です ===');
         }
@@ -371,11 +496,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // 5秒待ってから実行（初期データロード完了を待つ）
             setTimeout(async () => {
-                console.log('Running automatic repeat check (optimized - weekly on Monday)...');
+                console.log('Running automatic repeat check (optimized - weekly on Monday, with conflict detection)...');
                 await window.app.checkAndGenerateFutureRepeats();
             }, 5000);
         }
     }, 1000);
 });
 
-console.log('✅ Repeat auto-generate feature loaded (optimized version)');
+console.log('✅ Repeat auto-generate feature loaded (optimized version with conflict detection)');
