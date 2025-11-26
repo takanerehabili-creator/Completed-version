@@ -10,16 +10,15 @@
  */
 
 let historyState = {
-    lastDoc: null,
-    hasMore: true,
     currentFilters: {
-        dateRange: 7, // デフォルト: 過去7日
+        dateRange: '7', // デフォルト: 過去7日
         member: 'all',
         action: 'all'
     },
     cache: new Map(), // キャッシュ: フィルター条件ごとに保存
     listener: null, // リアルタイムリスナー
-    lastTimestamp: null // 最後に取得した履歴のタイムスタンプ
+    lastTimestamp: null, // 最後に取得した履歴のタイムスタンプ
+    loadedDocIds: new Set() // 既に取得済みのドキュメントID
 };
 
 // キャッシュキーを生成
@@ -28,7 +27,7 @@ function getCacheKey() {
 }
 
 // サイドバーを開く
-function openHistorySidebar() {
+async function openHistorySidebar() {
     const sidebar = document.getElementById('historySidebar');
     const overlay = document.getElementById('historyOverlay');
     
@@ -45,15 +44,18 @@ function openHistorySidebar() {
     if (historyState.cache.has(cacheKey)) {
         console.log('📦 Loading from cache (0 reads)');
         displayCachedHistory(cacheKey);
+        
+        // 差分同期：キャッシュより新しい履歴のみ取得
+        await syncNewHistoryLogs();
+        
+        // リスナーを開始
+        startRealtimeListener();
     } else {
         console.log('🔄 Loading from Firestore');
-        historyState.lastDoc = null;
-        historyState.hasMore = true;
-        loadHistoryLogs();
+        // 履歴を読み込んでからリスナーを開始
+        await loadHistoryLogs();
+        startRealtimeListener();
     }
-    
-    // リアルタイムリスナーを開始
-    startRealtimeListener();
 }
 
 // キャッシュから履歴を表示
@@ -67,12 +69,138 @@ function displayCachedHistory(cacheKey) {
     container.innerHTML = cachedData.html;
     countElement.textContent = cachedData.count;
     
-    // ページネーション状態を復元
-    historyState.lastDoc = cachedData.lastDoc;
-    historyState.hasMore = cachedData.hasMore;
-    historyState.lastTimestamp = cachedData.lastTimestamp;
+    // lastTimestampを復元（キャッシュから）
+    historyState.lastTimestamp = cachedData.lastTimestamp || null;
     
-    loadMoreBtn.style.display = cachedData.hasMore ? 'block' : 'none';
+    // loadedDocIdsを復元（重複防止のため）
+    if (cachedData.loadedDocIds) {
+        historyState.loadedDocIds = new Set(cachedData.loadedDocIds);
+        console.log(`📦 Restored ${historyState.loadedDocIds.size} doc IDs from cache`);
+    } else {
+        historyState.loadedDocIds.clear();
+    }
+    
+    // さらに読み込みボタンは常に非表示
+    loadMoreBtn.style.display = 'none';
+    
+    console.log('📦 Restored from cache, lastTimestamp:', historyState.lastTimestamp);
+}
+
+// 差分同期：キャッシュより新しい履歴のみ取得
+async function syncNewHistoryLogs() {
+    if (!historyState.lastTimestamp) {
+        console.log('⏭️ No lastTimestamp, skipping sync');
+        return;
+    }
+    
+    const container = document.getElementById('historyLogsContainer');
+    const countElement = document.getElementById('historyResultCount');
+    
+    try {
+        console.log('🔄 Syncing new logs since:', historyState.lastTimestamp);
+        
+        // lastTimestampより新しい履歴のみ取得
+        let query = db.collection('audit_logs')
+            .orderBy('timestamp', 'desc')
+            .where('timestamp', '>', historyState.lastTimestamp);
+        
+        // 日付範囲フィルター
+        if (historyState.currentFilters.dateRange !== 'all') {
+            const daysAgo = parseInt(historyState.currentFilters.dateRange);
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - daysAgo);
+            startDate.setHours(0, 0, 0, 0);
+            query = query.where('timestamp', '>=', startDate);
+        }
+        
+        const snapshot = await query.get();
+        
+        console.log(`🔄 Sync: Read ${snapshot.size} new documents`);
+        
+        if (snapshot.empty) {
+            console.log('✅ No new logs to sync');
+            return;
+        }
+        
+        // クライアント側でメンバーとアクションフィルター
+        let newLogs = [];
+        
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            
+            // 重複チェック
+            if (historyState.loadedDocIds.has(doc.id)) {
+                return;
+            }
+            
+            // メンバーフィルター
+            if (historyState.currentFilters.member !== 'all' && 
+                data.eventData?.member !== historyState.currentFilters.member) {
+                return;
+            }
+            
+            // アクションフィルター
+            if (historyState.currentFilters.action !== 'all' && 
+                data.action !== historyState.currentFilters.action) {
+                return;
+            }
+            
+            newLogs.push({ id: doc.id, data: data });
+        });
+        
+        console.log(`✅ Synced ${newLogs.length} new filtered logs`);
+        
+        if (newLogs.length === 0) {
+            return;
+        }
+        
+        // 新しい履歴を逆順で追加（最新が一番上になるように）
+        newLogs.reverse().forEach(log => {
+            const html = generateHistoryLogHTML(log.data, log.id);
+            container.insertAdjacentHTML('afterbegin', html);
+            historyState.loadedDocIds.add(log.id);
+            
+            // lastTimestampを更新
+            const logTimestamp = log.data.timestamp?.toDate ? log.data.timestamp.toDate() : new Date(log.data.timestamp);
+            if (!historyState.lastTimestamp || logTimestamp > historyState.lastTimestamp) {
+                historyState.lastTimestamp = logTimestamp;
+            }
+        });
+        
+        // フィルターの使用状況をチェック
+        const hasFilters = historyState.currentFilters.member !== 'all' || 
+                          historyState.currentFilters.action !== 'all';
+        const isDefaultState = !hasFilters && historyState.currentFilters.dateRange === '7';
+        
+        // デフォルト状態の場合、10件維持
+        if (isDefaultState) {
+            const allItems = container.querySelectorAll('.history-log-item');
+            if (allItems.length > 10) {
+                console.log('📌 Keeping only 10 most recent items after sync');
+                for (let i = 10; i < allItems.length; i++) {
+                    allItems[i].remove();
+                }
+            }
+        }
+        
+        // カウントを更新
+        const finalCount = container.querySelectorAll('.history-log-item').length;
+        countElement.textContent = finalCount;
+        
+        // キャッシュを更新
+        const cacheKey = getCacheKey();
+        historyState.cache.set(cacheKey, {
+            html: container.innerHTML,
+            count: finalCount,
+            lastTimestamp: historyState.lastTimestamp,
+            loadedDocIds: new Set(historyState.loadedDocIds)
+        });
+        
+        console.log('💾 Cache updated after sync');
+        
+    } catch (error) {
+        console.error('Failed to sync new logs:', error);
+    }
 }
 
 // フィルターの表示/非表示を切り替え
@@ -99,6 +227,9 @@ function closeHistorySidebar() {
     
     // リアルタイムリスナーを停止
     stopRealtimeListener();
+    
+    // キャッシュは保持（差分同期のため）
+    console.log('💾 Cache preserved for next open');
 }
 
 // リアルタイムリスナーを開始
@@ -108,16 +239,11 @@ function startRealtimeListener() {
     
     console.log('🎧 Starting realtime listener for new history logs');
     
-    // 現在の最新タイムスタンプ以降の履歴を監視
+    // 現在の最新タイムスタンプ以降の履歴を監視（日付フィルターのみ）
     let query = db.collection('audit_logs')
         .orderBy('timestamp', 'desc');
     
-    // 最後のタイムスタンプがあれば、それ以降のみ監視
-    if (historyState.lastTimestamp) {
-        query = query.where('timestamp', '>', historyState.lastTimestamp);
-    }
-    
-    // フィルター適用
+    // 日付範囲フィルターのみFirestoreで実行
     if (historyState.currentFilters.dateRange !== 'all') {
         const daysAgo = parseInt(historyState.currentFilters.dateRange);
         const startDate = new Date();
@@ -126,30 +252,55 @@ function startRealtimeListener() {
         query = query.where('timestamp', '>=', startDate);
     }
     
-    if (historyState.currentFilters.member !== 'all') {
-        query = query.where('eventData.member', '==', historyState.currentFilters.member);
-    }
-    
-    if (historyState.currentFilters.action !== 'all') {
-        query = query.where('action', '==', historyState.currentFilters.action);
-    }
+    // 初回スナップショットをスキップするフラグ
+    let isFirstSnapshot = true;
     
     // リスナーを設定
     historyState.listener = query.onSnapshot((snapshot) => {
+        console.log(`📡 Snapshot received: ${snapshot.size} docs, ${snapshot.docChanges().length} changes`);
+        
+        // 初回スナップショットは無視（既にloadHistoryLogsで読み込み済み）
+        if (isFirstSnapshot) {
+            isFirstSnapshot = false;
+            console.log('⏭️ Skipping initial snapshot (already loaded)');
+            return;
+        }
+        
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
                 const log = change.doc.data();
                 const logTimestamp = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
                 
-                // 初回読み込み時は追加しない（重複防止）
-                if (historyState.lastTimestamp && logTimestamp > historyState.lastTimestamp) {
+                // 重複チェック（既に表示されている履歴は追加しない）
+                if (historyState.loadedDocIds.has(change.doc.id)) {
+                    console.log('⏭️ Skipping duplicate log:', change.doc.id);
+                    return;
+                }
+                
+                // クライアント側でメンバーとアクションフィルターをチェック
+                let passesFilter = true;
+                
+                if (historyState.currentFilters.member !== 'all') {
+                    passesFilter = passesFilter && (log.eventData?.member === historyState.currentFilters.member);
+                }
+                
+                if (historyState.currentFilters.action !== 'all') {
+                    passesFilter = passesFilter && (log.action === historyState.currentFilters.action);
+                }
+                
+                if (passesFilter) {
                     console.log('✨ New history log detected:', change.doc.id);
                     prependNewHistoryLog(log, change.doc.id);
+                    
+                    // loadedDocIdsに追加
+                    historyState.loadedDocIds.add(change.doc.id);
                     
                     // 最新タイムスタンプを更新
                     if (!historyState.lastTimestamp || logTimestamp > historyState.lastTimestamp) {
                         historyState.lastTimestamp = logTimestamp;
                     }
+                } else {
+                    console.log('⏭️ Skipping log (does not match filters):', change.doc.id);
                 }
             }
         });
@@ -168,17 +319,38 @@ function prependNewHistoryLog(log, logId) {
     // 先頭に追加
     container.insertAdjacentHTML('afterbegin', html);
     
+    // loadedDocIdsに追加
+    historyState.loadedDocIds.add(logId);
+    
+    // 現在の履歴アイテムを取得
+    const allItems = container.querySelectorAll('.history-log-item');
+    
+    // フィルターの使用状況をチェック
+    const hasFilters = historyState.currentFilters.member !== 'all' || 
+                      historyState.currentFilters.action !== 'all';
+    const isDefaultState = !hasFilters && historyState.currentFilters.dateRange === '7';
+    
+    // デフォルト状態（フィルターなし）の場合のみ10件維持
+    if (isDefaultState && allItems.length > 10) {
+        console.log('📌 Keeping only 10 most recent items (default state)');
+        // 11件目以降を削除
+        for (let i = 10; i < allItems.length; i++) {
+            allItems[i].remove();
+        }
+    }
+    
     // カウントを更新
-    const currentCount = parseInt(countElement.textContent);
-    countElement.textContent = currentCount + 1;
+    const finalCount = container.querySelectorAll('.history-log-item').length;
+    countElement.textContent = finalCount;
     
     // キャッシュを更新
     const cacheKey = getCacheKey();
     if (historyState.cache.has(cacheKey)) {
         const cachedData = historyState.cache.get(cacheKey);
         cachedData.html = container.innerHTML;
-        cachedData.count = currentCount + 1;
+        cachedData.count = finalCount;
         cachedData.lastTimestamp = historyState.lastTimestamp;
+        cachedData.loadedDocIds = new Set(historyState.loadedDocIds);
     }
     
     // アニメーション効果
@@ -201,16 +373,15 @@ function stopRealtimeListener() {
 }
 
 // 履歴を読み込む
-async function loadHistoryLogs(loadMore = false) {
+async function loadHistoryLogs() {
     const container = document.getElementById('historyLogsContainer');
     const loadMoreBtn = document.getElementById('loadMoreHistoryBtn');
     const countElement = document.getElementById('historyResultCount');
     
-    if (!loadMore) {
-        container.innerHTML = '<div style="text-align:center;padding:20px;color:#666">読み込み中...</div>';
-        historyState.lastDoc = null;
-        historyState.lastTimestamp = null;
-    }
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:#666">読み込み中...</div>';
+    
+    // さらに読み込みボタンは常に非表示（新仕様）
+    loadMoreBtn.style.display = 'none';
     
     try {
         // クエリを構築
@@ -222,84 +393,90 @@ async function loadHistoryLogs(loadMore = false) {
             const startDate = new Date();
             startDate.setDate(startDate.getDate() - daysAgo);
             startDate.setHours(0, 0, 0, 0);
-            
             query = query.where('timestamp', '>=', startDate);
         }
         
-        // メンバーフィルター
-        if (historyState.currentFilters.member !== 'all') {
-            query = query.where('eventData.member', '==', historyState.currentFilters.member);
-        }
+        // フィルターなしの場合のみ10件制限
+        const hasFilters = historyState.currentFilters.member !== 'all' || 
+                          historyState.currentFilters.action !== 'all';
         
-        // アクションフィルター
-        if (historyState.currentFilters.action !== 'all') {
-            query = query.where('action', '==', historyState.currentFilters.action);
+        if (!hasFilters && historyState.currentFilters.dateRange === '7') {
+            // デフォルト状態（過去7日、フィルターなし）→ 10件のみ
+            query = query.limit(10);
+            console.log('📊 Loading latest 10 items (no filters)');
+        } else {
+            // フィルター使用時 → 範囲内の全件
+            console.log('📊 Loading all items in filtered range');
         }
-        
-        // ページネーション
-        if (loadMore && historyState.lastDoc) {
-            query = query.startAfter(historyState.lastDoc);
-        }
-        
-        query = query.limit(10);
         
         const snapshot = await query.get();
         
         console.log(`📊 Read count: ${snapshot.size} documents`);
         
         if (snapshot.empty) {
-            if (!loadMore) {
-                container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">📭 履歴がありません</div>';
-                countElement.textContent = '0';
-            }
-            historyState.hasMore = false;
-            loadMoreBtn.style.display = 'none';
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">📭 履歴がありません</div>';
+            countElement.textContent = '0';
             return;
         }
         
-        // 最後のドキュメントとタイムスタンプを保存
-        historyState.lastDoc = snapshot.docs[snapshot.docs.length - 1];
-        historyState.hasMore = snapshot.size === 10;
+        // クライアント側でメンバーとアクションフィルター
+        let filteredDocs = [];
         
-        // 最新のタイムスタンプを保存
-        const firstLog = snapshot.docs[0].data();
-        const firstTimestamp = firstLog.timestamp?.toDate ? firstLog.timestamp.toDate() : new Date(firstLog.timestamp);
-        if (!historyState.lastTimestamp || firstTimestamp > historyState.lastTimestamp) {
-            historyState.lastTimestamp = firstTimestamp;
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            
+            // メンバーフィルター
+            if (historyState.currentFilters.member !== 'all' && 
+                data.eventData?.member !== historyState.currentFilters.member) {
+                continue;
+            }
+            
+            // アクションフィルター
+            if (historyState.currentFilters.action !== 'all' && 
+                data.action !== historyState.currentFilters.action) {
+                continue;
+            }
+            
+            // フィルター通過
+            filteredDocs.push(doc);
         }
+        
+        console.log(`✅ Filtered: ${filteredDocs.length} docs`);
+        
+        if (filteredDocs.length === 0) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">📭 履歴がありません</div>';
+            countElement.textContent = '0';
+            return;
+        }
+        
+        // 最新のタイムスタンプを保存（リアルタイムリスナー用）
+        const firstLog = filteredDocs[0].data();
+        const firstTimestamp = firstLog.timestamp?.toDate ? firstLog.timestamp.toDate() : new Date(firstLog.timestamp);
+        historyState.lastTimestamp = firstTimestamp;
+        
+        // loadedDocIdsをクリアして再構築
+        historyState.loadedDocIds.clear();
         
         // HTMLを生成
         let html = '';
-        if (!loadMore) {
-            html = ''; // リセット
-        }
-        
-        snapshot.forEach(doc => {
+        filteredDocs.forEach(doc => {
             const log = doc.data();
             html += generateHistoryLogHTML(log, doc.id);
+            historyState.loadedDocIds.add(doc.id);
         });
         
-        if (loadMore) {
-            container.innerHTML += html;
-        } else {
-            container.innerHTML = html;
-        }
+        container.innerHTML = html;
+        countElement.textContent = filteredDocs.length;
         
-        // 件数を更新
-        const currentCount = container.querySelectorAll('.history-log-item').length;
-        countElement.textContent = currentCount;
-        
-        // 「さらに読み込む」ボタンの表示/非表示
-        loadMoreBtn.style.display = historyState.hasMore ? 'block' : 'none';
+        console.log(`📊 Displayed: ${filteredDocs.length} items`);
         
         // キャッシュに保存
         const cacheKey = getCacheKey();
         historyState.cache.set(cacheKey, {
             html: container.innerHTML,
-            count: currentCount,
-            lastDoc: historyState.lastDoc,
-            hasMore: historyState.hasMore,
-            lastTimestamp: historyState.lastTimestamp
+            count: filteredDocs.length,
+            lastTimestamp: historyState.lastTimestamp,
+            loadedDocIds: new Set(historyState.loadedDocIds)
         });
         
         console.log(`💾 Cached with key: ${cacheKey}`);
@@ -358,22 +535,29 @@ function generateHistoryLogHTML(log, logId) {
     }
     
     return `
-        <div class="history-log-item" style="border-left:4px solid ${actionColor};background:#fff;padding:12px;margin-bottom:12px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-                <div>
-                    <span style="font-size:18px;margin-right:6px">${actionIcon}</span>
-                    <span style="font-weight:600;color:${actionColor};font-size:14px">${actionText}</span>
+        <div class="history-log-item" style="display:flex;background:#fff;margin-bottom:12px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.1);overflow:hidden">
+            <div style="background:${actionColor};color:white;writing-mode:vertical-rl;text-orientation:upright;padding:12px 8px;font-weight:700;font-size:14px;letter-spacing:2px;display:flex;align-items:center;justify-content:center;min-width:32px">
+                ${actionText}
+            </div>
+            <div style="flex:1;padding:12px;position:relative">
+                <div style="position:absolute;top:12px;right:12px;background:${actionColor};color:white;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;text-align:center;line-height:1.2;padding:4px">
+                    ${memberName}
                 </div>
-                <div style="font-size:12px;color:#999">${timeStr}</div>
+                <div style="margin-right:60px">
+                    <div style="font-size:18px;font-weight:700;color:#333;margin-bottom:8px">
+                        ${log.eventData?.memberName || '不明'}
+                    </div>
+                    <div style="font-size:13px;color:#555;line-height:1.6">
+                        <div><strong>日付:</strong> ${log.eventData?.date || '不明'}</div>
+                        <div><strong>時間:</strong> ${log.eventData?.time || log.eventData?.startTime || '範囲'}</div>
+                        <div><strong>種類:</strong> ${getTypeLabel(log.eventData?.type)}</div>
+                    </div>
+                    ${changesHTML}
+                </div>
+                <div style="position:absolute;bottom:12px;right:12px;font-size:11px;color:#999">
+                    ${timeStr}
+                </div>
             </div>
-            <div style="font-size:13px;color:#333;line-height:1.6">
-                <div><strong>患者:</strong> ${log.eventData?.memberName || '不明'}</div>
-                <div><strong>担当:</strong> ${memberName}</div>
-                <div><strong>日付:</strong> ${log.eventData?.date || '不明'}</div>
-                <div><strong>時間:</strong> ${log.eventData?.time || log.eventData?.startTime || '範囲'}</div>
-                <div><strong>種類:</strong> ${getTypeLabel(log.eventData?.type)}</div>
-            </div>
-            ${changesHTML}
         </div>
     `;
 }
@@ -434,13 +618,13 @@ function getTypeLabel(type) {
 }
 
 // フィルターを適用
-function applyHistoryFilters() {
+async function applyHistoryFilters() {
     // フィルター値を取得
     historyState.currentFilters.dateRange = document.getElementById('historyDateRange').value;
     historyState.currentFilters.member = document.getElementById('historyMemberFilter').value;
     historyState.currentFilters.action = document.getElementById('historyActionFilter').value;
     
-    // リアルタイムリスナーを再起動
+    // リアルタイムリスナーを停止
     stopRealtimeListener();
     
     // キャッシュがあれば表示、なければ読み込み
@@ -448,15 +632,14 @@ function applyHistoryFilters() {
     if (historyState.cache.has(cacheKey)) {
         console.log('📦 Loading filtered results from cache (0 reads)');
         displayCachedHistory(cacheKey);
+        // キャッシュから復元後、リスナーを開始
+        startRealtimeListener();
     } else {
         console.log('🔄 Loading filtered results from Firestore');
-        historyState.lastDoc = null;
-        historyState.hasMore = true;
-        loadHistoryLogs();
+        // 履歴を読み込んでからリスナーを開始
+        await loadHistoryLogs();
+        startRealtimeListener();
     }
-    
-    // リアルタイムリスナーを開始
-    startRealtimeListener();
 }
 
 // フィルターをリセット
