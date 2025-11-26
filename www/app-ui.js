@@ -100,8 +100,8 @@ FirebaseScheduleManager.prototype.buildTable = function() {
         const holidayName = this.getHolidayName(dateString);
         const dayOfWeek = date.getDay();
         
-        // ⭐ 入れ替え対応: getStaffForDate()を使用
-        const staff = this.getStaffForDate(dateString);
+        // ⭐ 全時間帯統合のスタッフリストを使用
+        const staff = this.getAllStaffForDate(dateString);
         
         if (staff.length > 0) {
             const cellClass = i < 5 ? 'date-cell divider' : 'date-cell';
@@ -118,8 +118,8 @@ FirebaseScheduleManager.prototype.buildTable = function() {
         date.setDate(date.getDate() + i);
         const dateString = this.formatDate(date);
         
-        // ⭐ 入れ替え対応: getStaffForDate()を使用
-        const staff = this.getStaffForDate(dateString);
+        // ⭐ 全時間帯統合のスタッフリストを使用
+        const staff = this.getAllStaffForDate(dateString);
         
         staff.forEach((m, idx) => {
             const isLastStaffOfDay = idx === staff.length - 1;
@@ -180,11 +180,27 @@ FirebaseScheduleManager.prototype.buildTable = function() {
             const dateString = this.formatDate(date);
             const isHol = this.isHoliday(dateString);
             
-            // ⭐ 入れ替え対応: getStaffForDate()を使用
-            const staff = this.getStaffForDate(dateString);
+            // ⭐ 全時間帯統合のスタッフリストを使用
+            const staff = this.getAllStaffForDate(dateString);
             
             staff.forEach((m, idx) => {
                 const memberName = `${m.surname || ''}${m.firstname || ''}`;
+                
+                // 🆕 この時間帯にスタッフが有効かチェック
+                const isActive = this.isStaffActiveAtTime(memberName, dateString, time);
+                
+                if (!isActive) {
+                    // この時間帯は休み
+                    const isLastStaffOfDay = idx === staff.length - 1;
+                    let cellClass = isLastStaffOfDay && i < 5 ? 'schedule-cell divider staff-leave-bg' : 'schedule-cell staff-leave-bg';
+                    if (isHol) cellClass += ' holiday';
+                    
+                    html += `<td class="${cellClass}" data-member="${memberName}" data-date="${dateString}" data-time="${time}">
+                        <div class="time-bg">${time}</div>
+                    </td>`;
+                    return;
+                }
+                
                 const cellKey = `${memberName}-${dateString}-${time}`;
                 
                 // ⭐ 追加: 通常イベントでスキップ対象の場合は何も描画しない

@@ -101,9 +101,19 @@ FirebaseScheduleManager.prototype.renderStaffOverrideList = function() {
         const days = ['日','月','火','水','木','金','土'];
         const dateText = `${date.getMonth() + 1}/${date.getDate()}(${days[date.getDay()]})`;
         
+        // 🆕 時間帯テキスト
+        let timeSlotText = '';
+        if (override.timeSlot === 'morning') {
+            timeSlotText = ' <span style="background:#ffeb3b;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600">午前</span>';
+        } else if (override.timeSlot === 'afternoon') {
+            timeSlotText = ' <span style="background:#ff9800;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:white">午後</span>';
+        } else {
+            timeSlotText = ' <span style="background:#2196f3;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:white">全日</span>';
+        }
+        
         item.innerHTML = `
             <div class="list-info" style="flex-direction:column;align-items:flex-start;gap:4px">
-                <div style="font-weight:600;color:#d32f2f">${dateText}</div>
+                <div style="font-weight:600;color:#d32f2f">${dateText}${timeSlotText}</div>
                 <div style="font-size:13px;color:#666">${override.originalStaff} → ${override.replacementStaff}</div>
             </div>
             <div class="list-actions">
@@ -116,10 +126,12 @@ FirebaseScheduleManager.prototype.renderStaffOverrideList = function() {
 // ⭐ スタッフ入れ替え追加
 FirebaseScheduleManager.prototype.addStaffOverride = async function() {
     const dateInput = document.getElementById('overrideDate');
+    const timeSlotSelect = document.getElementById('overrideTimeSlot');
     const originalSelect = document.getElementById('overrideOriginalStaff');
     const replacementSelect = document.getElementById('overrideReplacementStaff');
     
     const date = dateInput.value;
+    const timeSlot = timeSlotSelect.value;
     const originalStaff = originalSelect.value;
     const replacementStaff = replacementSelect.value;
     
@@ -145,18 +157,38 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
     
     const duplicate = this.staffOverrides.find(o => 
         o.date === date && 
+        o.timeSlot === timeSlot &&
         (o.originalStaff === originalStaff || o.replacementStaff === replacementStaff)
     );
     
     if (duplicate) {
-        this.showNotification('その日には既に入れ替え設定が存在します', 'error');
+        this.showNotification('その日時にはすでに入れ替え設定が存在します', 'error');
         return;
     }
     
-    // ⭐ 該当日の元スタッフの予約を確認
-    const reservationsToTransfer = this.events.filter(e => 
-        e.member === originalStaff && e.date === date
-    );
+    // ⭐ 該当日の元スタッフの予約を確認（時間帯でフィルター）
+    const reservationsToTransfer = this.events.filter(e => {
+        if (e.member !== originalStaff || e.date !== date) return false;
+        
+        // 時間帯チェック
+        const eventTime = e.time || e.startTime;
+        if (!eventTime) return false;
+        
+        const hour = parseInt(eventTime.split(':')[0]);
+        const minute = parseInt(eventTime.split(':')[1]);
+        const timeInMinutes = hour * 60 + minute;
+        
+        if (timeSlot === 'morning') {
+            // 午前: 9:00-12:40 (540-760分)
+            return timeInMinutes >= 540 && timeInMinutes <= 760;
+        } else if (timeSlot === 'afternoon') {
+            // 午後: 13:00-18:00 (780-1080分)
+            return timeInMinutes >= 780 && timeInMinutes <= 1080;
+        } else {
+            // 全日
+            return true;
+        }
+    });
     
     let shouldTransfer = false;
     
@@ -165,7 +197,9 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
         const days = ['日','月','火','水','木','金','土'];
         const dateText = `${dateObj.getMonth() + 1}/${dateObj.getDate()}(${days[dateObj.getDay()]})`;
         
-        const message = `${dateText}に${originalStaff}の予約が${reservationsToTransfer.length}件あります。\n\n` +
+        const timeSlotText = timeSlot === 'morning' ? '午前' : timeSlot === 'afternoon' ? '午後' : '全日';
+        
+        const message = `${dateText}の${timeSlotText}に${originalStaff}の予約が${reservationsToTransfer.length}件あります。\n\n` +
                        `これらの予約を${replacementStaff}に引き継ぎますか？\n\n` +
                        `「はい」を選択すると、予約のスタッフが自動的に${replacementStaff}に変更されます。\n` +
                        `「いいえ」を選択すると、予約はそのまま${originalStaff}に残ります。`;
@@ -178,6 +212,7 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
         
         await db.collection('staffOverrides').add({
             date,
+            timeSlot,  // 🆕 時間帯を追加
             originalStaff,
             replacementStaff,
             createdAt: new Date()
@@ -204,6 +239,7 @@ FirebaseScheduleManager.prototype.addStaffOverride = async function() {
         }
         
         dateInput.value = '';
+        timeSlotSelect.value = 'all';
         originalSelect.value = '';
         replacementSelect.value = '';
         
@@ -227,16 +263,34 @@ FirebaseScheduleManager.prototype.deleteStaffOverride = async function(i) {
     const days = ['日','月','火','水','木','金','土'];
     const dateText = `${date.getMonth() + 1}/${date.getDate()}(${days[date.getDay()]})`;
     
-    if (confirm(`${dateText}のスタッフ入れ替えを削除しますか?\n${override.originalStaff} → ${override.replacementStaff}`)) {
-        // ⭐ 該当日の代わりスタッフの予約を確認（元々引き継がれた可能性のある予約）
-        const reservationsToRevert = this.events.filter(e => 
-            e.member === override.replacementStaff && e.date === override.date
-        );
+    const timeSlotText = override.timeSlot === 'morning' ? '午前' : override.timeSlot === 'afternoon' ? '午後' : '全日';
+    
+    if (confirm(`${dateText}の${timeSlotText}のスタッフ入れ替えを削除しますか?\n${override.originalStaff} → ${override.replacementStaff}`)) {
+        // ⭐ 該当日の代わりスタッフの予約を確認（時間帯でフィルター）
+        const reservationsToRevert = this.events.filter(e => {
+            if (e.member !== override.replacementStaff || e.date !== override.date) return false;
+            
+            // 時間帯チェック
+            const eventTime = e.time || e.startTime;
+            if (!eventTime) return false;
+            
+            const hour = parseInt(eventTime.split(':')[0]);
+            const minute = parseInt(eventTime.split(':')[1]);
+            const timeInMinutes = hour * 60 + minute;
+            
+            if (override.timeSlot === 'morning') {
+                return timeInMinutes >= 540 && timeInMinutes <= 760;
+            } else if (override.timeSlot === 'afternoon') {
+                return timeInMinutes >= 780 && timeInMinutes <= 1080;
+            } else {
+                return true; // 全日
+            }
+        });
         
         let shouldRevert = false;
         
         if (reservationsToRevert.length > 0) {
-            const message = `${dateText}に${override.replacementStaff}の予約が${reservationsToRevert.length}件あります。\n\n` +
+            const message = `${dateText}の${timeSlotText}に${override.replacementStaff}の予約が${reservationsToRevert.length}件あります。\n\n` +
                            `これらの予約を${override.originalStaff}に戻しますか？\n\n` +
                            `「はい」を選択すると、予約のスタッフが${override.originalStaff}に変更されます。\n` +
                            `「いいえ」を選択すると、予約は${override.replacementStaff}のまま残ります。`;

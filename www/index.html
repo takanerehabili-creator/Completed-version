@@ -127,6 +127,73 @@
         </div>
     </div>
 
+    <!-- 履歴サイドバー -->
+    <div id="historyOverlay" class="history-overlay"></div>
+    <div id="historySidebar" class="history-sidebar">
+        <div class="history-sidebar-header">
+            <h2 style="margin:0;font-size:20px;font-weight:600;color:#333">📜 操作履歴</h2>
+            <button onclick="closeHistorySidebar()" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        </div>
+        
+        <div class="history-sidebar-content">
+            <!-- フィルターセクション -->
+            <div style="margin-bottom:20px;background:#f8f9fa;padding:16px;border-radius:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;cursor:pointer" onclick="toggleHistoryFilters()">
+                    <h3 style="margin:0;font-size:16px;font-weight:600;color:#555">🔍 フィルター</h3>
+                    <span id="filterToggleIcon" style="font-size:14px;color:#666">▼</span>
+                </div>
+                
+                <div id="historyFiltersContainer" style="display:none">
+                    <div style="margin-bottom:12px">
+                        <label style="display:block;margin-bottom:6px;font-weight:600;color:#555;font-size:13px">期間:</label>
+                        <select id="historyDateRange" style="width:100%;padding:8px;font-size:14px;border-radius:6px;border:1px solid #ddd">
+                            <option value="1">過去1日</option>
+                            <option value="3">過去3日</option>
+                            <option value="7" selected>過去7日</option>
+                            <option value="30">過去30日</option>
+                            <option value="all">すべて</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom:12px">
+                        <label style="display:block;margin-bottom:6px;font-weight:600;color:#555;font-size:13px">担当:</label>
+                        <select id="historyMemberFilter" style="width:100%;padding:8px;font-size:14px;border-radius:6px;border:1px solid #ddd">
+                            <option value="all">すべて</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom:12px">
+                        <label style="display:block;margin-bottom:6px;font-weight:600;color:#555;font-size:13px">アクション:</label>
+                        <select id="historyActionFilter" style="width:100%;padding:8px;font-size:14px;border-radius:6px;border:1px solid #ddd">
+                            <option value="all">すべて</option>
+                            <option value="create">追加</option>
+                            <option value="update">変更</option>
+                            <option value="delete">削除</option>
+                        </select>
+                    </div>
+                    
+                    <div style="display:flex;gap:8px">
+                        <button onclick="applyHistoryFilters()" style="flex:1;padding:10px;background:#4285f4;color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">適用</button>
+                        <button onclick="resetHistoryFilters()" style="flex:1;padding:10px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">リセット</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 結果表示 -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #e0e0e0">
+                <h3 style="margin:0;font-size:16px;font-weight:600;color:#333">
+                    履歴: <span id="historyResultCount" style="color:#4285f4">0</span>件
+                </h3>
+            </div>
+            
+            <div id="historyLogsContainer">
+                <div style="text-align:center;padding:20px;color:#666">読み込み中...</div>
+            </div>
+            
+            <button id="loadMoreHistoryBtn" onclick="loadHistoryLogs(true)" style="width:100%;margin-top:16px;padding:12px;background:#f5f5f5;color:#333;border:1px solid #ddd;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;display:none">さらに読み込む</button>
+        </div>
+    </div>
+
     <!-- カレンダーモーダル -->
     <div id="calendarModal" class="modal calendar-modal">
         <div class="modal-content calendar-content">
@@ -348,6 +415,14 @@
                     <div style="display:flex;gap:10px;align-items:center">
                         <label style="min-width:100px;font-weight:600;font-size:14px">日付:</label>
                         <input type="date" id="overrideDate" class="form-input" style="flex:1">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="min-width:100px;font-weight:600;font-size:14px">時間帯:</label>
+                        <select id="overrideTimeSlot" class="form-select" style="flex:1">
+                            <option value="all">全日（9:00-18:00）</option>
+                            <option value="morning">午前のみ（9:00-12:40）</option>
+                            <option value="afternoon">午後のみ（13:00-18:00）</option>
+                        </select>
                     </div>
                     <div style="display:flex;gap:10px;align-items:center">
                         <label style="min-width:100px;font-weight:600;font-size:14px">休みにする:</label>
@@ -654,12 +729,12 @@
     <script src="app-export.js"></script>
     <script src="app-main.js"></script>
     <script src="app-init.js"></script>
+    <script src="audit-log.js"></script><!-- ⭐ 操作履歴記録機能 -->
     <script src="trouble-delete.js"></script>
     <script src="bulk-reservation.js"></script>
     <script src="bulk-delete.js"></script>
     <script src="search-sidebar.js"></script><!-- ⭐ 検索機能（サイドバー版） -->
-    <script src="audit-log.js"></script><!-- ⭐ 履歴記録機能 -->
-    <script src="history-sidebar.js"></script><!-- ⭐ 履歴表示機能 -->
+    <script src="history-sidebar.js"></script><!-- ⭐ 履歴表示機能（サイドバー版） -->
     <script src="holiday-fetch.js"></script>
     <script src="management-modals.js"></script>
     <script src="duplicate-detection-optimized.js"></script><!-- ⭐ 重複予定チェック機能（読み取り0回） -->
@@ -747,100 +822,5 @@
         }
     });
 </script>
-
-<!-- 履歴サイドバー -->
-<div id="historyOverlay" class="history-overlay"></div>
-<div id="historySidebar" class="history-sidebar">
-    <div class="history-sidebar-header">
-        <h2 style="margin:0;font-size:20px;font-weight:600;color:#333">📋 操作履歴</h2>
-        <button onclick="closeHistorySidebar()" 
-                style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;line-height:1;padding:0">
-            ×
-        </button>
-    </div>
-    
-    <div class="history-sidebar-content">
-        <!-- 結果表示（前面に移動） -->
-        <div style="background:#e3f2fd;border-left:4px solid #2196f3;padding:12px;margin-bottom:15px;border-radius:4px;position:relative;z-index:1">
-            <div style="font-size:13px;color:#1976d2">
-                履歴: <span id="historyResultCount" style="font-weight:600;font-size:15px">0</span>件
-            </div>
-        </div>
-        
-        <!-- フィルター折りたたみボタン -->
-        <button onclick="toggleHistoryFilters()" 
-                class="action-btn secondary" 
-                style="width:100%;margin-bottom:15px;padding:10px;display:flex;justify-content:space-between;align-items:center">
-            <span>🔍 フィルター</span>
-            <span id="filterToggleIcon">▼</span>
-        </button>
-        
-        <!-- フィルター（初期状態は非表示） -->
-        <div id="historyFiltersContainer" style="display:none;background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:20px">
-            <!-- 日付範囲 -->
-            <div style="margin-bottom:12px">
-                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">期間:</label>
-                <select id="historyDateRange" 
-                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
-                    <option value="7">過去7日間</option>
-                    <option value="30">過去30日間</option>
-                    <option value="90">過去90日間</option>
-                    <option value="all">全期間</option>
-                </select>
-            </div>
-            
-            <!-- メンバー -->
-            <div style="margin-bottom:12px">
-                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">担当:</label>
-                <select id="historyMemberFilter" 
-                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
-                    <option value="all">すべて</option>
-                    <!-- メンバーは動的に追加される -->
-                </select>
-            </div>
-            
-            <!-- アクション -->
-            <div style="margin-bottom:12px">
-                <label style="display:block;margin-bottom:6px;font-size:13px;color:#666">操作:</label>
-                <select id="historyActionFilter" 
-                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
-                    <option value="all">すべて</option>
-                    <option value="create">🆕 追加</option>
-                    <option value="update">✏️ 変更</option>
-                    <option value="delete">🗑️ 削除</option>
-                </select>
-            </div>
-            
-            <div style="display:flex;gap:8px">
-                <button onclick="applyHistoryFilters()" 
-                        class="action-btn primary" 
-                        style="flex:1;padding:8px;font-size:13px">
-                    適用
-                </button>
-                <button onclick="resetHistoryFilters()" 
-                        class="action-btn secondary" 
-                        style="flex:1;padding:8px;font-size:13px">
-                    リセット
-                </button>
-            </div>
-        </div>
-        
-        <!-- 履歴リスト -->
-        <div id="historyLogsContainer">
-            <div style="text-align:center;padding:40px;color:#999">
-                📋 履歴を読み込んでいます...
-            </div>
-        </div>
-        
-        <!-- さらに読み込むボタン -->
-        <button id="loadMoreHistoryBtn" 
-                onclick="loadHistoryLogs(true)" 
-                class="action-btn secondary" 
-                style="width:100%;margin-top:10px;display:none">
-            さらに読み込む
-        </button>
-    </div>
-</div>
-
 </body>
 </html>

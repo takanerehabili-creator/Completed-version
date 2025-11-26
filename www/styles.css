@@ -1698,6 +1698,23 @@ body {
     flex-direction: column;
 }
 
+.history-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0);
+    pointer-events: none;
+    transition: background 0.3s ease;
+    z-index: 10999;
+}
+
+.history-overlay.active {
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+}
+
 .history-sidebar.active {
     right: 0;
 }

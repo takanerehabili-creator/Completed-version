@@ -146,7 +146,10 @@ class FirebaseScheduleManager {
             (m.workdays || [1,2,3,4,5]).includes(dayOfWeek)
         );
         
-        const overrides = this.staffOverrides.filter(o => o.date === dateString);
+        // 🆕 全日の入れ替えのみここで処理
+        const overrides = this.staffOverrides.filter(o => 
+            o.date === dateString && (!o.timeSlot || o.timeSlot === 'all')
+        );
         
         if (overrides.length > 0) {
             overrides.forEach(override => {
@@ -170,6 +173,177 @@ class FirebaseScheduleManager {
         }
         
         return staff;
+    }
+    
+    // 🆕 時間帯別のスタッフ取得関数
+    getStaffForTimeSlot(dateString, time) {
+        const staff = this.getStaffForDate(dateString);
+        
+        if (!time) return staff;
+        
+        // 時間を分に変換
+        const [hour, minute] = time.split(':').map(Number);
+        const timeInMinutes = hour * 60 + minute;
+        
+        // 半日の入れ替えをチェック
+        const halfDayOverrides = this.staffOverrides.filter(o => 
+            o.date === dateString && (o.timeSlot === 'morning' || o.timeSlot === 'afternoon')
+        );
+        
+        if (halfDayOverrides.length === 0) return staff;
+        
+        let modifiedStaff = [...staff];
+        
+        halfDayOverrides.forEach(override => {
+            let shouldApply = false;
+            
+            if (override.timeSlot === 'morning') {
+                // 午前: 9:00-12:40 (540-760分)
+                shouldApply = timeInMinutes >= 540 && timeInMinutes <= 760;
+            } else if (override.timeSlot === 'afternoon') {
+                // 午後: 13:00-18:00 (780-1080分)
+                shouldApply = timeInMinutes >= 780 && timeInMinutes <= 1080;
+            }
+            
+            if (shouldApply) {
+                // 元のスタッフを除外
+                modifiedStaff = modifiedStaff.filter(m => {
+                    const memberName = `${m.surname || ''}${m.firstname || ''}`;
+                    return memberName !== override.originalStaff;
+                });
+                
+                // 代わりのスタッフを追加
+                const replacementMember = this.teamMembers.find(m => {
+                    const memberName = `${m.surname || ''}${m.firstname || ''}`;
+                    return memberName === override.replacementStaff;
+                });
+                
+                if (replacementMember) {
+                    const alreadyExists = modifiedStaff.some(s => s.id === replacementMember.id);
+                    if (!alreadyExists) {
+                        modifiedStaff.push(replacementMember);
+                    }
+                }
+            }
+        });
+        
+        return modifiedStaff;
+    }
+    
+    // 🆕 1日全体のスタッフリストを取得（全時間帯統合）
+    getAllStaffForDate(dateString) {
+        const baseStaff = this.getStaffForDate(dateString);
+        
+        // 半日入れ替えをチェック
+        const halfDayOverrides = this.staffOverrides.filter(o => 
+            o.date === dateString && (o.timeSlot === 'morning' || o.timeSlot === 'afternoon')
+        );
+        
+        if (halfDayOverrides.length === 0) return baseStaff;
+        
+        // 全時間帯のスタッフを統合
+        const allStaffSet = new Set();
+        
+        // 基本スタッフを追加
+        baseStaff.forEach(m => {
+            const name = `${m.surname || ''}${m.firstname || ''}`;
+            allStaffSet.add(name);
+        });
+        
+        // 半日入れ替えのスタッフを追加
+        halfDayOverrides.forEach(override => {
+            // 元のスタッフも残す（別の時間帯で必要）
+            allStaffSet.add(override.originalStaff);
+            // 代わりのスタッフも追加
+            allStaffSet.add(override.replacementStaff);
+        });
+        
+        // スタッフオブジェクトに変換
+        const allStaff = [];
+        allStaffSet.forEach(name => {
+            const member = this.teamMembers.find(m => {
+                const memberName = `${m.surname || ''}${m.firstname || ''}`;
+                return memberName === name;
+            });
+            if (member) {
+                allStaff.push(member);
+            }
+        });
+        
+        return allStaff;
+    }
+    
+    // 🆕 特定の時間帯にスタッフが有効かチェック
+    isStaffActiveAtTime(memberName, dateString, time) {
+        if (!time) return true;
+        
+        // 時間を分に変換
+        const [hour, minute] = time.split(':').map(Number);
+        const timeInMinutes = hour * 60 + minute;
+        
+        // このスタッフが元々出勤予定か
+        const date = this.createLocalDate(dateString);
+        const dayOfWeek = date.getDay();
+        const member = this.teamMembers.find(m => {
+            const name = `${m.surname || ''}${m.firstname || ''}`;
+            return name === memberName;
+        });
+        
+        if (!member) return false;
+        
+        const isScheduledToday = (member.workdays || [1,2,3,4,5]).includes(dayOfWeek);
+        
+        // 全日入れ替えチェック
+        const allDayOverride = this.staffOverrides.find(o => 
+            o.date === dateString && 
+            (!o.timeSlot || o.timeSlot === 'all') &&
+            (o.originalStaff === memberName || o.replacementStaff === memberName)
+        );
+        
+        if (allDayOverride) {
+            // 全日入れ替えがある
+            if (allDayOverride.originalStaff === memberName) {
+                return false; // 休みになった
+            } else {
+                return true; // 代わりに出勤
+            }
+        }
+        
+        // 半日入れ替えチェック
+        const halfDayOverride = this.staffOverrides.find(o => 
+            o.date === dateString && 
+            (o.timeSlot === 'morning' || o.timeSlot === 'afternoon') &&
+            (o.originalStaff === memberName || o.replacementStaff === memberName)
+        );
+        
+        if (halfDayOverride) {
+            let isInTimeSlot = false;
+            
+            if (halfDayOverride.timeSlot === 'morning') {
+                isInTimeSlot = timeInMinutes >= 540 && timeInMinutes <= 760;
+            } else if (halfDayOverride.timeSlot === 'afternoon') {
+                isInTimeSlot = timeInMinutes >= 780 && timeInMinutes <= 1080;
+            }
+            
+            if (isInTimeSlot) {
+                // この時間帯に入れ替えあり
+                if (halfDayOverride.originalStaff === memberName) {
+                    return false; // この時間帯は休み
+                } else {
+                    return true; // この時間帯に代わりに出勤
+                }
+            } else {
+                // この時間帯は入れ替えなし
+                if (halfDayOverride.originalStaff === memberName) {
+                    return isScheduledToday; // 元々の勤務予定通り
+                } else {
+                    return false; // 代わりスタッフはこの時間帯には出勤しない
+                }
+            }
+        }
+        
+        // 入れ替えなし
+        return isScheduledToday;
     }
     
     async loadDaySchedules() {
