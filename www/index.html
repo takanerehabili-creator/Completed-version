@@ -12,6 +12,18 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     
     <link rel="stylesheet" href="styles.css">
+    
+    <!-- 保留バッジのアニメーション -->
+    <style>
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+    
+    #pending-badge {
+        animation: pulse 2s infinite;
+    }
+    </style>
 </head>
 <body>
     <div class="offline-indicator" id="offlineIndicator">オフライン</div>
@@ -243,6 +255,40 @@
                     <button class="action-btn primary" onclick="exportPDF()">PDF出力</button>
                     <button class="action-btn primary" onclick="exportExcel()">Excel出力</button>
                 </div>
+            </div>
+            
+            <!-- お知らせセクション -->
+            <div class="form-section">
+                <label class="form-label">お知らせ:</label>
+                <div style="position:relative">
+                    <button class="action-btn primary" onclick="openPendingNotifications()" style="width:100%;padding:15px;font-size:16px;position:relative">
+                        🔔 保留中の自動生成を確認
+                        <span id="pending-badge" style="
+                            position: absolute;
+                            top: 8px;
+                            right: 8px;
+                            background: #ff4757;
+                            color: white;
+                            border-radius: 50%;
+                            width: 24px;
+                            height: 24px;
+                            display: none;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 12px;
+                            font-weight: bold;
+                            border: 2px solid white;
+                        ">0</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- ⭐ システム情報セクション -->
+            <div class="form-section">
+                <label class="form-label">システム情報:</label>
+                <button class="action-btn primary" onclick="showErrorLogs()" style="width:100%;padding:15px;font-size:16px">
+                    📋 エラーログを表示
+                </button>
             </div>
             
             <!-- 各管理機能へのボタン -->
@@ -739,6 +785,7 @@
     <script src="management-modals.js"></script>
     <script src="duplicate-detection-optimized.js"></script><!-- ⭐ 重複予定チェック機能（読み取り0回） -->
     <script src="backup-restore.js"></script><!-- ⭐ バックアップ＆復元機能 -->
+    <script src="error-handler.js"></script><!-- ⭐ エラーハンドリング強化機能 -->
     
    <!-- スタッフセレクトボックス動的更新用スクリプト -->
 <script>
@@ -821,6 +868,19 @@
             });
         }
     });
+    
+    // お知らせバッジの初期化と定期更新
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof updatePendingBadge === 'function') {
+            updatePendingBadge();
+        }
+    });
+
+    setInterval(function() {
+        if (typeof updatePendingBadge === 'function') {
+            updatePendingBadge();
+        }
+    }, 5000);
 </script>
 </body>
 </html>

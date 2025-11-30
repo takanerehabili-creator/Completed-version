@@ -94,8 +94,18 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
             let hasConflict = false;
             snapshot.forEach(doc => {
                 const data = doc.data();
-                // 同じ繰り返しグループは除外（自分自身との衝突は無視）
-                if (data.repeatParent === parentId || doc.id === parentId) {
+                
+                // ⭐ 同じ繰り返しグループのイベントが既に存在する場合はスキップ
+                if (data.repeatParent === parentId) {
+                    console.log(`⏭️ Event already exists from same repeat group on ${nextDateStr}:`);
+                    console.log(`  Existing: ${data.time} - ${data.displayName || data.surname + data.firstname}`);
+                    console.log(`  → Skipping to preserve manual changes`);
+                    hasConflict = true;
+                    return;
+                }
+                
+                // 親イベント自身との衝突は無視
+                if (doc.id === parentId) {
                     return;
                 }
                 
@@ -104,7 +114,7 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
                     return;
                 }
                 
-                // 時間範囲の重複チェック
+                // 時間範囲の重複チェック（他の繰り返しグループや単発予約との衝突）
                 if (checkTimeOverlap(baseEvent.time, baseEvent.type, data.time, data.type)) {
                     console.log(`⚠️ Conflict detected on ${nextDateStr}:`);
                     console.log(`  Auto-generate: ${baseEvent.time} (${baseEvent.type})`);
@@ -132,7 +142,8 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
             repeatPattern: {  // ⭐ 繰り返し設定を保存
                 type: baseEvent.repeat,
                 intervalDays: intervalDays,
-                baseDate: baseDate
+                baseDate: baseDate,
+                originalTime: baseEvent.time  // ⭐ 元の時刻を保存
             },
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -145,6 +156,28 @@ FirebaseScheduleManager.prototype.generateRepeatingInFirestoreExtended = async f
                 delete repeatEvent[key];
             }
         });
+        
+        // ⭐⭐⭐ 【最終確認チェック】他の端末が既に作成していないか確認
+        try {
+            const finalCheck = await db.collection('events')
+                .where('member', '==', baseEvent.member)
+                .where('date', '==', nextDateStr)
+                .where('repeatParent', '==', parentId)
+                .get();
+            
+            if (finalCheck.size > 0) {
+                console.log(`⏭️ Final check: Already created by another device on ${nextDateStr}`);
+                skippedCount++;
+                occurrenceCount++;
+                continue;
+            }
+        } catch (error) {
+            console.error(`❌ Final check error for ${nextDateStr}:`, error);
+            // エラー時は安全のためスキップ
+            skippedCount++;
+            occurrenceCount++;
+            continue;
+        }
         
         const newDocRef = db.collection('events').doc();
         batch.set(newDocRef, repeatEvent);
@@ -194,8 +227,17 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
                 let hasConflict = false;
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    // 同じ繰り返しグループは除外
-                    if (data.repeatParent === parentId || doc.id === parentId) {
+                    
+                    // ⭐ 同じ繰り返しグループのイベントが既に存在する場合はスキップ
+                    if (data.repeatParent === parentId) {
+                        console.log(`⏭️ Range event already exists from same repeat group on ${dateStr}`);
+                        console.log(`  → Skipping to preserve manual changes`);
+                        hasConflict = true;
+                        return;
+                    }
+                    
+                    // 親イベント自身との衝突は無視
+                    if (doc.id === parentId) {
                         return;
                     }
                     
@@ -242,6 +284,28 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
                 }
             });
             
+            // ⭐⭐⭐ 【最終確認チェック】他の端末が既に作成していないか確認
+            try {
+                const finalCheck = await db.collection('events')
+                    .where('member', '==', baseEvent.member)
+                    .where('date', '==', dateStr)
+                    .where('repeatParent', '==', parentId)
+                    .get();
+                
+                if (finalCheck.size > 0) {
+                    console.log(`⏭️ Final check: Range event already created by another device on ${dateStr}`);
+                    skippedCount++;
+                    occurrenceCount++;
+                    continue;
+                }
+            } catch (error) {
+                console.error(`❌ Final check error for range event on ${dateStr}:`, error);
+                // エラー時は安全のためスキップ
+                skippedCount++;
+                occurrenceCount++;
+                continue;
+            }
+            
             const docRef = db.collection('events').doc();
             batch.set(docRef, repeatEvent);
             console.log(`✅ Generated: ${dateStr} (occurrence ${occurrenceCount})`);
@@ -253,6 +317,100 @@ FirebaseScheduleManager.prototype.generateRepeatingRangeEventsExtended = async f
     await batch.commit();
     console.log(`=== 範囲イベント生成完了: スキップ ${skippedCount}件 ===`);
 };
+
+// ⭐ 多数派のスタッフ名を判定
+function determineMajorityStaff(events) {
+    if (!events || events.length === 0) {
+        return null;
+    }
+    
+    // スタッフ名の頻度をカウント
+    const staffFrequency = {};
+    
+    events.forEach(event => {
+        const staff = event.member;
+        if (staff) {
+            staffFrequency[staff] = (staffFrequency[staff] || 0) + 1;
+        }
+    });
+    
+    if (Object.keys(staffFrequency).length === 0) {
+        return null;
+    }
+    
+    console.log('  Staff frequency:', staffFrequency);
+    
+    // 最頻値を取得
+    let majorityStaff = null;
+    let maxCount = 0;
+    
+    for (const [staff, count] of Object.entries(staffFrequency)) {
+        if (count > maxCount) {
+            maxCount = count;
+            majorityStaff = staff;
+        }
+    }
+    
+    const total = events.length;
+    const ratio = maxCount / total;
+    
+    console.log(`  Majority staff: ${majorityStaff} (${maxCount}/${total} = ${(ratio * 100).toFixed(1)}%)`);
+    
+    return {
+        staff: majorityStaff,
+        count: maxCount,
+        total: total,
+        ratio: ratio
+    };
+}
+
+// ⭐ 名前変更されたイベントを除外してフィルタリング
+function filterOutNameChanges(events) {
+    if (!events || events.length === 0) {
+        return {
+            original: [],
+            nameChanged: [],
+            majorityStaff: null,
+            majorityRatio: 0
+        };
+    }
+    
+    // 多数派を判定
+    const majority = determineMajorityStaff(events);
+    
+    if (!majority || !majority.staff) {
+        console.log('  ⚠️ Could not determine majority staff');
+        return {
+            original: events,
+            nameChanged: [],
+            majorityStaff: null,
+            majorityRatio: 0
+        };
+    }
+    
+    // 多数派と異なるスタッフ名を持つイベントを分離
+    const originalEvents = [];
+    const nameChangedEvents = [];
+    
+    events.forEach(event => {
+        if (event.member === majority.staff) {
+            originalEvents.push(event);
+        } else {
+            nameChangedEvents.push(event);
+            console.log(`  📝 Name changed: ${event.id} (${event.date}) - ${majority.staff} → ${event.member}`);
+        }
+    });
+    
+    console.log(`  Original events (${majority.staff}): ${originalEvents.length}`);
+    console.log(`  Name changed events: ${nameChangedEvents.length}`);
+    
+    return {
+        original: originalEvents,
+        nameChanged: nameChangedEvents,
+        majorityStaff: majority.staff,
+        majorityRatio: majority.ratio
+    };
+}
 
 // ⭐ スマート時刻判定: 多数決 + 連続変更検知
 function determineOptimalTime(events) {
@@ -326,6 +484,63 @@ function getThisMonday() {
     return monday.toISOString().split('T')[0]; // YYYY-MM-DD
 }
 
+// ⭐ 日付から曜日を取得（日本語）
+function getDayOfWeek(dateStr) {
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const date = new Date(dateStr);
+    return dayNames[date.getDay()];
+}
+
+// ===== 保留データ管理機能 =====
+
+// ⭐ 保留データを保存
+function savePendingGeneration(pendingData) {
+    const pendingList = getPendingGenerations();
+    pendingList.push(pendingData);
+    localStorage.setItem('pendingGenerations', JSON.stringify(pendingList));
+    
+    // バッジ更新
+    updatePendingBadge();
+}
+
+// ⭐ 保留データ一覧を取得
+function getPendingGenerations() {
+    const data = localStorage.getItem('pendingGenerations');
+    return data ? JSON.parse(data) : [];
+}
+
+// ⭐ 保留データを削除
+function removePendingGeneration(pendingId) {
+    let pendingList = getPendingGenerations();
+    pendingList = pendingList.filter(item => item.id !== pendingId);
+    localStorage.setItem('pendingGenerations', JSON.stringify(pendingList));
+    
+    // バッジ更新
+    updatePendingBadge();
+}
+
+// ⭐ すべての保留データをクリア
+function clearAllPendingGenerations() {
+    localStorage.removeItem('pendingGenerations');
+    updatePendingBadge();
+}
+
+// ⭐ お知らせバッジを更新
+function updatePendingBadge() {
+    const pendingList = getPendingGenerations();
+    const count = pendingList.length;
+    
+    const badge = document.getElementById('pending-badge');
+    if (badge) {
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
 // ⭐ 最適化: チェックが必要か判定
 function shouldRunRepeatCheck() {
     const lastCheck = localStorage.getItem('lastRepeatCheck');
@@ -352,9 +567,9 @@ function shouldRunRepeatCheck() {
     return false;
 }
 
-// アプリ起動時のチェック＆自動生成（最適化版 + 衝突チェック対応）
+// アプリ起動時のチェック＆自動生成（最適化版 + 衝突チェック + 名前変更除外対応）
 FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function() {
-    console.log('=== 繰り返しイベントのチェック開始（衝突チェック有効） ===');
+    console.log('=== 繰り返しイベントのチェック開始（衝突チェック + 名前変更除外対応） ===');
     
     // ⭐ 最適化: 週1回のみ実行
     if (!shouldRunRepeatCheck()) {
@@ -408,13 +623,50 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
         
         // 各グループについて2ヶ月先までデータがあるかチェック
         let generatedCount = 0;
+        let nameChangedGroupCount = 0;
+        let skippedGroupCount = 0;
         
         for (const [parentId, group] of repeatGroups) {
-            console.log(`\nChecking group: ${parentId}`);
+            console.log(`\n=== Checking group: ${parentId} ===`);
+            console.log(`Total events: ${group.events.length}`);
             console.log(`Latest date: ${group.latestDate}`);
+            
+            // ⭐ 名前変更を除外してフィルタリング
+            const filtered = filterOutNameChanges(group.events);
+            
+            console.log(`📊 Filter results:`);
+            console.log(`  - Original events: ${filtered.original.length}`);
+            console.log(`  - Name changed events: ${filtered.nameChanged.length}`);
+            console.log(`  - Majority staff: ${filtered.majorityStaff}`);
+            
+            if (filtered.nameChanged.length > 0) {
+                nameChangedGroupCount++;
+                console.log(`⚠️ This group contains ${filtered.nameChanged.length} name-changed event(s)`);
+            }
+            
+            if (filtered.original.length === 0) {
+                console.log(`⏭️ SKIP: All events have been renamed`);
+                console.log('   → This repeat group is now managed manually');
+                skippedGroupCount++;
+                continue;
+            }
+            
+            // 名前変更の割合をチェック
+            const nameChangeRatio = filtered.nameChanged.length / group.events.length;
+            if (nameChangeRatio > 0) {
+                console.log(`  Name change ratio: ${(nameChangeRatio * 100).toFixed(1)}%`);
+            }
+            
+            if (nameChangeRatio >= 0.8) {
+                console.log(`⏭️ SKIP: Too many name changes (${(nameChangeRatio * 100).toFixed(1)}%)`);
+                console.log('   → Most events have been renamed, consider creating a new repeat schedule');
+                skippedGroupCount++;
+                continue;
+            }
             
             if (group.latestDate < twoMonthsLaterStr) {
                 console.log(`⚠️ Need to generate more events (latest: ${group.latestDate}, need until: ${twoMonthsLaterStr})`);
+                console.log(`📅 Generation will be triggered`);
                 
                 const pattern = group.latestEvent.repeatPattern;
                 if (!pattern) {
@@ -422,34 +674,149 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
                     continue;
                 }
                 
-                // ⭐ スマート時刻判定を実行
-                const optimalTime = determineOptimalTime(group.events);
-                const timeToUse = optimalTime || group.latestEvent.time;
+                // ⭐ 元のスタッフ名のイベントの中から最新を取得
+                const sortedOriginal = filtered.original.sort((a, b) => 
+                    b.date.localeCompare(a.date)
+                );
+                const latestOriginal = sortedOriginal[0];
+                
+                console.log(`Using latest original event: ${latestOriginal.id} (${latestOriginal.date})`);
+                console.log(`  Member: ${latestOriginal.member}`);
+                console.log(`  Time: ${latestOriginal.time}`);
+                
+                // ⭐ 元の時刻を取得（repeatPatternから、または最も古いイベントから）
+                let originalTime = null;
+                if (pattern.originalTime) {
+                    // 新しいデータ: repeatPatternに保存されている
+                    originalTime = pattern.originalTime;
+                    console.log(`Original time from repeatPattern: ${originalTime}`);
+                } else {
+                    // 既存データ: グループ内で最も古いイベントから取得
+                    const oldestEvent = filtered.original.sort((a, b) => 
+                        a.date.localeCompare(b.date)
+                    )[0];
+                    originalTime = oldestEvent.time;
+                    console.log(`Original time from oldest event: ${originalTime} (${oldestEvent.date})`);
+                }
+                
+                // ⭐ スマート時刻判定を実行（名前変更を除外したイベントで判定）
+                const optimalTime = determineOptimalTime(filtered.original);
+                const timeToUse = optimalTime || latestOriginal.time;
                 
                 console.log(`Determined time to use: ${timeToUse}`);
                 
-                // 最新の日付から6ヶ月分追加生成
-                const baseEvent = {
-                    member: group.latestEvent.member,
-                    surname: group.latestEvent.surname,
-                    firstname: group.latestEvent.firstname,
-                    displayName: group.latestEvent.displayName,
-                    time: timeToUse,  // ⭐ スマート判定結果を使用
-                    startTime: group.latestEvent.startTime,
-                    endTime: group.latestEvent.endTime,
-                    type: group.latestEvent.type,
-                    repeat: pattern.type
-                };
+                // ⭐ 変更検出: 名前変更または時間変更があるか
+                const hasNameChange = filtered.nameChanged.length > 0;
+                const hasTimeChange = originalTime !== timeToUse;
                 
-                if (group.latestEvent.type === 'day' || group.latestEvent.type === 'meeting') {
-                    // 範囲イベント
-                    await this.generateRepeatingRangeEventsExtended(baseEvent, parentId, group.latestDate);
-                } else {
-                    // 通常イベント
-                    await this.generateRepeatingInFirestoreExtended(baseEvent, parentId, group.latestDate);
+                let shouldGenerate = true;
+                let finalMember = latestOriginal.member;
+                let finalSurname = latestOriginal.surname;
+                let finalFirstname = latestOriginal.firstname;
+                let finalDisplayName = latestOriginal.displayName;
+                let finalTime = timeToUse;
+                
+                // ⭐ 名前変更または時間変更がある場合、保留リストに自動保存
+                if (hasNameChange || hasTimeChange) {
+                    console.log(`\n⚠️ Changes detected in group ${parentId}:`);
+                    console.log(`  - hasNameChange: ${hasNameChange} (${filtered.nameChanged.length} events)`);
+                    console.log(`  - hasTimeChange: ${hasTimeChange} (${latestOriginal.time} → ${timeToUse})`);
+                    
+                    if (hasNameChange) {
+                        console.log(`  - Name changes: ${filtered.nameChanged.length} event(s)`);
+                        const changedNames = [...new Set(filtered.nameChanged.map(e => e.member))].join(', ');
+                        console.log(`    Changed to: ${changedNames}`);
+                    }
+                    if (hasTimeChange) {
+                        console.log(`  - Time change: ${latestOriginal.time} → ${timeToUse}`);
+                    }
+                    
+                    console.log(`💾 Auto-saving to pending list...`);
+                    
+                    // ⭐ 元の予約の患者名を取得
+                    const originalPatientName = latestOriginal.surname && latestOriginal.firstname 
+                        ? `${latestOriginal.surname} ${latestOriginal.firstname}` 
+                        : latestOriginal.displayName || '（患者名なし）';
+                    
+                    // ⭐ 元の予約の曜日を取得
+                    const originalDayOfWeek = getDayOfWeek(latestOriginal.date);
+                    
+                    // ⭐ 変更された予約の情報を詳細に取得
+                    const changedEventsDetails = filtered.nameChanged.map(e => {
+                        const patientName = e.surname && e.firstname 
+                            ? `${e.surname} ${e.firstname}` 
+                            : e.displayName || '（患者名なし）';
+                        const dayOfWeek = getDayOfWeek(e.date);
+                        return {
+                            date: e.date,
+                            dayOfWeek: dayOfWeek,
+                            time: e.time,
+                            member: e.member,
+                            patientName: patientName
+                        };
+                    });
+                    
+                    // ⭐ 保留データとして保存
+                    const pendingData = {
+                        id: `pending_${Date.now()}_${parentId}`,
+                        parentId: parentId,
+                        timestamp: new Date().toISOString(),
+                        originalPatientName: originalPatientName,
+                        member: latestOriginal.member,
+                        surname: latestOriginal.surname,
+                        firstname: latestOriginal.firstname,
+                        displayName: latestOriginal.displayName,
+                        dayOfWeek: originalDayOfWeek,
+                        time: timeToUse,
+                        originalTime: originalTime,  // ⭐ 真の元の時刻を保存
+                        hasNameChange: hasNameChange,
+                        hasTimeChange: hasTimeChange,
+                        nameChangedCount: filtered.nameChanged.length,
+                        changedEventsDetails: changedEventsDetails,
+                        latestDate: group.latestDate,
+                        type: latestOriginal.type,
+                        startTime: latestOriginal.startTime,
+                        endTime: latestOriginal.endTime,
+                        repeatPattern: pattern
+                    };
+                    
+                    // localStorageに保存
+                    savePendingGeneration(pendingData);
+                    console.log(`💾 Saved as pending generation: ${pendingData.id}`);
+                    
+                    skippedGroupCount++;
+                    shouldGenerate = false;
                 }
                 
-                generatedCount++;
+                // 生成実行
+                if (shouldGenerate) {
+                    // 最新の日付から6ヶ月分追加生成
+                    const baseEvent = {
+                        member: finalMember,
+                        surname: finalSurname,
+                        firstname: finalFirstname,
+                        displayName: finalDisplayName,
+                        time: finalTime,
+                        startTime: latestOriginal.startTime,
+                        endTime: latestOriginal.endTime,
+                        type: latestOriginal.type,
+                        repeat: pattern.type
+                    };
+                    
+                    console.log(`Generating 6 months from: ${group.latestDate}`);
+                    console.log(`Base event:`, baseEvent);
+                    
+                    if (latestOriginal.type === 'day' || latestOriginal.type === 'meeting') {
+                        // 範囲イベント
+                        await this.generateRepeatingRangeEventsExtended(baseEvent, parentId, group.latestDate);
+                    } else {
+                        // 通常イベント
+                        await this.generateRepeatingInFirestoreExtended(baseEvent, parentId, group.latestDate);
+                    }
+                    
+                    generatedCount++;
+                    console.log(`✅ Generation completed for group ${parentId}`);
+                }
             } else {
                 console.log(`✅ Group has enough future events`);
             }
@@ -460,10 +827,25 @@ FirebaseScheduleManager.prototype.checkAndGenerateFutureRepeats = async function
         localStorage.setItem('lastRepeatCheck', thisMonday);
         console.log(`✅ Repeat check completed and recorded: ${thisMonday}`);
         
+        // ⭐ 詳細レポート
+        console.log(`\n=== Auto-Generation Summary ===`);
+        console.log(`Generated: ${generatedCount} group(s)`);
+        console.log(`Groups with name changes: ${nameChangedGroupCount}`);
+        console.log(`Skipped groups: ${skippedGroupCount}`);
+        
         if (generatedCount > 0) {
-            console.log(`\n=== ${generatedCount}個の繰り返しグループに追加生成しました（衝突はスキップ） ===`);
-            this.showNotification(`${generatedCount}個の繰り返し予定を更新しました（衝突日は自動スキップ）`, 'info');
-        } else {
+            this.showNotification(`${generatedCount}個の繰り返し予定を更新しました（衝突日・名前変更は除外）`, 'info');
+        }
+        
+        if (nameChangedGroupCount > 0) {
+            console.log(`ℹ️ ${nameChangedGroupCount}個のグループで名前変更を検出しました`);
+        }
+        
+        if (skippedGroupCount > 0) {
+            this.showNotification(`${skippedGroupCount}個の繰り返しグループは手動管理が必要です`, 'warning');
+        }
+        
+        if (generatedCount === 0 && skippedGroupCount === 0) {
             console.log('\n=== すべての繰り返し予定は最新です ===');
         }
         
@@ -503,4 +885,381 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 1000);
 });
 
-console.log('✅ Repeat auto-generate feature loaded (optimized version with conflict detection)');
+console.log('✅ Repeat auto-generate feature loaded (optimized version with conflict detection + name change exclusion)');// ===== 保留中の自動生成管理UI =====
+
+// ⭐ お知らせパネルを表示（スタッフ毎にグループ化）
+function showPendingGenerationsPanel() {
+    const pendingList = getPendingGenerations();
+    
+    if (pendingList.length === 0) {
+        alert('保留中の自動生成はありません');
+        return;
+    }
+    
+    // スタッフ毎にグループ化
+    const groupedByStaff = {};
+    pendingList.forEach(item => {
+        const staffName = item.member || '（スタッフ名なし）';
+        if (!groupedByStaff[staffName]) {
+            groupedByStaff[staffName] = [];
+        }
+        groupedByStaff[staffName].push(item);
+    });
+    
+    // オーバーレイを作成
+    const overlay = document.createElement('div');
+    overlay.id = 'pending-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 10000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    `;
+    
+    // パネルを作成
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        max-width: 900px;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    `;
+    
+    // ヘッダー
+    let html = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 15px;">
+            <h2 style="margin: 0; color: #333; font-size: 24px;">
+                🔔 保留中の自動生成
+                <span style="background: #ff6b6b; color: white; padding: 4px 10px; border-radius: 12px; font-size: 14px; margin-left: 10px;">
+                    ${pendingList.length}件
+                </span>
+            </h2>
+            <button onclick="closePendingPanel()" style="
+                background: #f5f5f5;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 18px;
+                color: #666;
+            ">✕</button>
+        </div>
+    `;
+    
+    // スタッフ毎にグループ表示
+    Object.keys(groupedByStaff).sort().forEach(staffName => {
+        const items = groupedByStaff[staffName];
+        
+        html += `
+            <div style="
+                border: 2px solid #2196f3;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 20px;
+                background: #f8f9fa;
+            ">
+                <div style="
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #2196f3;
+                    margin-bottom: 15px;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid #e0e0e0;
+                ">
+                    📋 スタッフ: ${staffName}
+                    <span style="
+                        background: #2196f3;
+                        color: white;
+                        padding: 2px 8px;
+                        border-radius: 10px;
+                        font-size: 14px;
+                        margin-left: 10px;
+                    ">${items.length}件</span>
+                </div>
+                
+                ${items.map((item, index) => {
+                    const changedInfo = [];
+                    if (item.hasNameChange) {
+                        changedInfo.push(`スタッフ名変更: ${item.nameChangedCount}件`);
+                    }
+                    if (item.hasTimeChange) {
+                        changedInfo.push(`時刻変更: ${item.originalTime} → ${item.time}`);
+                    }
+                    const changedText = changedInfo.join('、');
+                    
+                    return `
+                        <div style="
+                            background: white;
+                            border: 1px solid #e0e0e0;
+                            border-radius: 8px;
+                            padding: 15px;
+                            margin-bottom: 10px;
+                        ">
+                            <!-- 患者名クリックで詳細表示 -->
+                            <div onclick="togglePendingDetail('${item.id}')" style="
+                                cursor: pointer;
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                padding: 5px;
+                            ">
+                                <div style="flex: 1;">
+                                    <div style="
+                                        font-size: 16px;
+                                        font-weight: bold;
+                                        color: #333;
+                                        margin-bottom: 5px;
+                                    ">
+                                        ${item.originalPatientName}
+                                    </div>
+                                    <div style="color: #666; font-size: 13px;">
+                                        📅 毎週${item.dayOfWeek}曜日 ⏰ ${item.time}
+                                    </div>
+                                </div>
+                                <div style="color: #999; font-size: 20px;" id="arrow-${item.id}">▼</div>
+                            </div>
+                            
+                            <!-- 詳細情報（初期状態は非表示） -->
+                            <div id="detail-${item.id}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #f0f0f0;">
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #666; font-size: 14px; line-height: 1.8;">
+                                        <div><strong>患者名:</strong> ${item.originalPatientName}</div>
+                                        <div><strong>スタッフ:</strong> ${item.member}</div>
+                                        <div><strong>曜日:</strong> 毎週${item.dayOfWeek}曜日</div>
+                                        <div><strong>時刻:</strong> ${item.time}</div>
+                                    </div>
+                                    <div style="
+                                        background: #fff3cd;
+                                        border: 1px solid #ffc107;
+                                        border-radius: 6px;
+                                        padding: 8px 12px;
+                                        font-size: 12px;
+                                        color: #856404;
+                                        margin-top: 10px;
+                                    ">
+                                        保留日時: ${new Date(item.timestamp).toLocaleString('ja-JP', {
+                                            year: 'numeric',
+                                            month: '2-digit',
+                                            day: '2-digit',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </div>
+                                </div>
+                                
+                                ${changedText ? `
+                                <div style="
+                                    background: #fff3e0;
+                                    border-left: 4px solid #ff9800;
+                                    padding: 12px;
+                                    margin-bottom: 15px;
+                                    border-radius: 4px;
+                                ">
+                                    <div style="color: #ff9800; font-weight: bold; margin-bottom: 5px;">⚠️ 検出された変更</div>
+                                    <div style="color: #666; font-size: 14px;">${changedText}</div>
+                                </div>
+                                ` : ''}
+                                
+                                ${item.hasNameChange ? `
+                                <div style="
+                                    background: #f5f5f5;
+                                    border: 1px solid #e0e0e0;
+                                    border-radius: 6px;
+                                    padding: 12px;
+                                    margin-bottom: 15px;
+                                    max-height: 150px;
+                                    overflow-y: auto;
+                                ">
+                                    <div style="font-size: 13px; color: #666; font-weight: bold; margin-bottom: 8px;">変更された予約:</div>
+                                    ${item.changedEventsDetails.slice(0, 5).map(detail => `
+                                        <div style="font-size: 12px; color: #333; padding: 4px 0; border-bottom: 1px solid #e0e0e0;">
+                                            ${detail.date}(${detail.dayOfWeek}) ${detail.time} ${detail.member} → ${detail.patientName}
+                                        </div>
+                                    `).join('')}
+                                    ${item.changedEventsDetails.length > 5 ? `
+                                        <div style="font-size: 12px; color: #999; padding: 4px 0;">
+                                            ...他${item.changedEventsDetails.length - 5}件
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                ` : ''}
+                                
+                                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                                    <button onclick="executePendingGeneration('${item.id}')" style="
+                                        background: #4CAF50;
+                                        color: white;
+                                        border: none;
+                                        padding: 10px 20px;
+                                        border-radius: 6px;
+                                        cursor: pointer;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#45a049'" onmouseout="this.style.background='#4CAF50'">
+                                        ✓ 生成する
+                                    </button>
+                                    <button onclick="deletePendingGeneration('${item.id}')" style="
+                                        background: #f44336;
+                                        color: white;
+                                        border: none;
+                                        padding: 10px 20px;
+                                        border-radius: 6px;
+                                        cursor: pointer;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#da190b'" onmouseout="this.style.background='#f44336'">
+                                        ✕ 削除
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    });
+    
+    // すべてクリアボタン
+    html += `
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
+            <button onclick="clearAllPending()" style="
+                background: #9e9e9e;
+                color: white;
+                border: none;
+                padding: 10px 30px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.2s;
+            " onmouseover="this.style.background='#757575'" onmouseout="this.style.background='#9e9e9e'">
+                すべてクリア
+            </button>
+        </div>
+    `;
+    
+    panel.innerHTML = html;
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+}
+
+// ⭐ 詳細表示のトグル
+window.togglePendingDetail = function(itemId) {
+    const detailDiv = document.getElementById(`detail-${itemId}`);
+    const arrow = document.getElementById(`arrow-${itemId}`);
+    
+    if (detailDiv.style.display === 'none') {
+        detailDiv.style.display = 'block';
+        arrow.textContent = '▲';
+    } else {
+        detailDiv.style.display = 'none';
+        arrow.textContent = '▼';
+    }
+};
+
+// ⭐ パネルを閉じる
+window.closePendingPanel = function() {
+    const overlay = document.getElementById('pending-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
+};
+
+// ⭐ 保留データを実行
+window.executePendingGeneration = async function(pendingId) {
+    const pendingList = getPendingGenerations();
+    const item = pendingList.find(p => p.id === pendingId);
+    
+    if (!item) {
+        alert('データが見つかりません');
+        return;
+    }
+    
+    // 確認ダイアログ
+    const confirmMessage = `以下の内容で6ヶ月分を生成しますか？\n\n` +
+        `患者名: ${item.originalPatientName}\n` +
+        `スタッフ: ${item.member}\n` +
+        `曜日: 毎週${item.dayOfWeek}曜日\n` +
+        `時刻: ${item.time}`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        // 生成処理
+        const baseEvent = {
+            member: item.member,
+            surname: item.surname,
+            firstname: item.firstname,
+            displayName: item.displayName,
+            time: item.time,
+            startTime: item.startTime,
+            endTime: item.endTime,
+            type: item.type,
+            repeat: item.repeatPattern.type
+        };
+        
+        console.log('Generating from pending data:', baseEvent);
+        
+        if (item.type === 'day' || item.type === 'meeting') {
+            await app.generateRepeatingRangeEventsExtended(baseEvent, item.parentId, item.latestDate);
+        } else {
+            await app.generateRepeatingInFirestoreExtended(baseEvent, item.parentId, item.latestDate);
+        }
+        
+        // 保留データから削除
+        removePendingGeneration(pendingId);
+        
+        alert('✅ 6ヶ月分の予定を生成しました');
+        
+        // パネルを更新
+        closePendingPanel();
+        showPendingGenerationsPanel();
+        
+    } catch (error) {
+        console.error('Generation error:', error);
+        alert('⚠️ 生成中にエラーが発生しました: ' + error.message);
+    }
+};
+
+// ⭐ 保留データを削除
+window.deletePendingGeneration = function(pendingId) {
+    if (confirm('この保留データを削除しますか？')) {
+        removePendingGeneration(pendingId);
+        
+        // パネルを更新
+        closePendingPanel();
+        const remaining = getPendingGenerations();
+        if (remaining.length > 0) {
+            showPendingGenerationsPanel();
+        } else {
+            alert('すべての保留データが削除されました');
+        }
+    }
+};
+
+// ⭐ すべての保留データをクリア
+window.clearAllPending = function() {
+    if (confirm('すべての保留データを削除しますか？')) {
+        clearAllPendingGenerations();
+        closePendingPanel();
+        alert('すべての保留データを削除しました');
+    }
+};
+
+// ⭐ お知らせボタンをクリックした際の処理
+window.openPendingNotifications = function() {
+    showPendingGenerationsPanel();
+};
+
+console.log('✅ Pending generations UI loaded');
